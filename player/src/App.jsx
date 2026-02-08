@@ -3,6 +3,7 @@ import { io } from 'socket.io-client';
 import * as db from './db';
 
 const PLAYER_ID_KEY = 'digitalsignage_player_id';
+const LAST_VIDEO_KEY = 'digitalsignage_last_video_id'; // Açılışta otomatik oynatılacak son video
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || (import.meta.env.DEV ? 'http://localhost:3000' : window.location.origin);
 
 function getOrCreatePlayerId() {
@@ -41,6 +42,11 @@ export default function App() {
       const ids = await db.getStoredVideoIds();
       setStoredVideoIds(ids);
       socket.emit('join-room', { room: 'player', playerId, storedVideos: ids });
+      // Pi/kiosk: açılışta son oynatılan videoyu otomatik başlat (Chromium hazır olsun diye kısa gecikme)
+      const lastId = localStorage.getItem(LAST_VIDEO_KEY);
+      if (lastId && ids.includes(lastId)) {
+        setTimeout(() => playVideoById(lastId), 1500);
+      }
     });
 
     socket.on('joined', () => setConnected(true));
@@ -64,7 +70,7 @@ export default function App() {
       }
     });
 
-    socket.on('play_video', async ({ videoId }) => {
+    const playVideoById = async (videoId) => {
       setError(null);
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
@@ -88,13 +94,14 @@ export default function App() {
         video.load();
         setCurrentVideoId(videoId);
         currentVideoIdRef.current = videoId;
+        localStorage.setItem(LAST_VIDEO_KEY, videoId);
         await new Promise((resolve, reject) => {
           video.oncanplay = () => resolve();
           video.onerror = () => reject(video.error);
           if (video.readyState >= 3) resolve();
         });
         await video.play();
-        socket.emit('player_status', { status: 'playing' });
+        socketRef.current?.emit('player_status', { status: 'playing' });
         try {
           if (video.requestFullscreen) video.requestFullscreen();
           else if (video.webkitRequestFullscreen) video.webkitRequestFullscreen();
@@ -103,6 +110,10 @@ export default function App() {
         setError(e.message || 'Oynatılamadı');
         setCurrentVideoId(null);
       }
+    };
+
+    socket.on('play_video', async ({ videoId }) => {
+      await playVideoById(videoId);
     });
 
     socket.on('stop', () => {

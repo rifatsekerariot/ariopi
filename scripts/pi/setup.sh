@@ -98,12 +98,13 @@ unclutter -idle 0.5 -root &
 # Ağ ve X hazır olsun diye kısa bekleme (Pi siyah ekran sorununu azaltır)
 sleep 8
 
-# Chromium kiosk modunda Player URL'sini aç
+# Chromium kiosk: video otomatik oynatma (Pi'de autoplay politikasını gevşet)
 $CHROMIUM_CMD \\
   --kiosk \\
   --noerrdialogs \\
   --disable-infobars \\
   --no-first-run \\
+  --autoplay-policy=no-user-gesture-required \\
   --disable-session-crashed-bubble \\
   --check-for-update-interval=31536000 \\
   --disable-backgrounding-occluded-windows \\
@@ -127,15 +128,44 @@ cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << EOF
 ExecStart=
 ExecStart=-/sbin/agetty --autologin $KIOSK_USER --noclear %I \$TERM
 EOF
+systemctl daemon-reload
+systemctl enable getty@tty1.service 2>/dev/null || true
+echo "  getty@tty1 etkinlestirildi; acilista otomatik oturum acilir ve kiosk baslar."
 
-# --- .profile: tty1'de oturum açılınca startx (kiosk), ağ için kısa bekleme ---
-if ! grep -q 'startx.*tty1' /home/"$KIOSK_USER"/.profile 2>/dev/null; then
+# --- startx wrapper: loglama ile hata ayıklama (SSH ile /tmp/ariopi-startx.log bakılabilir) ---
+WRAPPER="/home/$KIOSK_USER/ariopi-kiosk-startx.sh"
+cat > "$WRAPPER" << 'WRAPEOF'
+#!/bin/bash
+LOG=/tmp/ariopi-startx.log
+echo "=== $(date) tty=$(tty) DISPLAY=${DISPLAY:-yok} ===" >> "$LOG"
+[ "$(tty)" != /dev/tty1 ] && exit 0
+[ -n "${DISPLAY:-}" ] && exit 0
+echo "ArioPi: startx baslatiliyor..." >> "$LOG"
+sleep 3
+exec startx >> "$LOG" 2>&1
+WRAPEOF
+chmod +x "$WRAPPER"
+chown "$KIOSK_USER":"$KIOSK_USER" "$WRAPPER"
+echo "  Startx wrapper: $WRAPPER (log: /tmp/ariopi-startx.log)"
+
+# --- .profile: tty1'de wrapper çalıştır (bash login shell .profile okur) ---
+if ! grep -q 'ariopi-kiosk-startx' /home/"$KIOSK_USER"/.profile 2>/dev/null; then
   echo '' >> /home/"$KIOSK_USER"/.profile
-  echo '# ArioPi kiosk: tty1 girişinde X ve Chromium kiosk başlat' >> /home/"$KIOSK_USER"/.profile
-  echo 'if [ -z "$DISPLAY" ] && [ "$(tty)" = /dev/tty1 ]; then sleep 3; exec startx; fi' >> /home/"$KIOSK_USER"/.profile
+  echo '# ArioPi kiosk: tty1 girişinde X ve Chromium başlat' >> /home/"$KIOSK_USER"/.profile
+  echo '[ -z "$DISPLAY" ] && [ "$(tty)" = /dev/tty1 ] && exec '"$WRAPPER" >> /home/"$KIOSK_USER"/.profile
   chown "$KIOSK_USER":"$KIOSK_USER" /home/"$KIOSK_USER"/.profile
 fi
-echo "  Autologin ve startx ayarlandı; açılışta tty1'de kiosk başlar."
+# --- .bash_profile: bazı sistemlerde login'de sadece bu okunur; aynı tetikleyici ---
+if [ ! -f /home/"$KIOSK_USER"/.bash_profile ] || ! grep -q 'ariopi-kiosk-startx' /home/"$KIOSK_USER"/.bash_profile 2>/dev/null; then
+  touch /home/"$KIOSK_USER"/.bash_profile
+  if ! grep -q 'ariopi-kiosk-startx' /home/"$KIOSK_USER"/.bash_profile 2>/dev/null; then
+    echo '' >> /home/"$KIOSK_USER"/.bash_profile
+    echo '# ArioPi kiosk: tty1 girişinde X başlat' >> /home/"$KIOSK_USER"/.bash_profile
+    echo '[ -z "$DISPLAY" ] && [ "$(tty)" = /dev/tty1 ] && exec '"$WRAPPER" >> /home/"$KIOSK_USER"/.bash_profile
+  fi
+  chown "$KIOSK_USER":"$KIOSK_USER" /home/"$KIOSK_USER"/.bash_profile
+fi
+echo "  Autologin + startx (.profile ve .bash_profile) ayarlandi."
 
 # --- HDMI siyah ekran önleme (/boot veya /boot/firmware) ---
 echo ""
@@ -147,6 +177,13 @@ for BOOT_CONF in /boot/config.txt /boot/firmware/config.txt; do
       echo "  $BOOT_CONF: hdmi_force_hotplug=1 eklendi."
     else
       echo "  $BOOT_CONF: hdmi_force_hotplug=1 zaten var."
+    fi
+    # Video oynatma siyah ekran/performans: GPU bellek 256MB (Chromium önerisi)
+    if ! grep -q '^gpu_mem=' "$BOOT_CONF" 2>/dev/null; then
+      echo "gpu_mem=256" >> "$BOOT_CONF"
+      echo "  $BOOT_CONF: gpu_mem=256 eklendi (video oynatma için)."
+    else
+      echo "  $BOOT_CONF: gpu_mem zaten ayarlı."
     fi
     break
   fi
@@ -165,13 +202,14 @@ chown -R "$KIOSK_USER":"$KIOSK_USER" /home/"$KIOSK_USER"/.config/ariopi
 
 echo ""
 echo "=============================================="
-echo "  Pi kurulumu tamamlandı."
+echo "  Pi kurulumu tamamlandi. Sistem ve kiosk hazir."
 echo "=============================================="
+echo "Kurulanlar: Xorg, Openbox, Chromium, autologin, startx wrapper, HDMI/GPU ayarlari."
+echo "Acilista otomatik: tty1'de giris -> startx -> Openbox -> Chromium kiosk (Player URL)."
+echo ""
 echo "Player URL: $PLAYER_URL"
+echo "Konsol erisimi: Ctrl+Alt+F2 (tty2)."
 echo ""
-echo "Açılışta tty1'de otomatik giriş yapılır ve startx ile kiosk başlar (HDMI)."
-echo "Konsol: Ctrl+Alt+F2 (tty2)."
-echo ""
-echo "Sunucunun bu Pi'ye erişilebilir olduğundan emin olun (firewall, aynı ağ)."
-echo "Yeniden başlatın: sudo reboot"
+echo "Chromium ekrana gelmezse: SSH ile  cat /tmp/ariopi-startx.log"
+echo "Sunucunun Pi'ye erisilebilir oldugundan emin olun. Son adim:  sudo reboot"
 echo ""

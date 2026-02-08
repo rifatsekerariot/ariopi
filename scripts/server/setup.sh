@@ -162,12 +162,17 @@ EOF
 systemctl daemon-reload
 systemctl enable ariopi-server
 systemctl start ariopi-server 2>/dev/null || true
-echo "  Servis kuruldu ve açılışta başlamak üzere etkinleştirildi."
+if systemctl is-active --quiet ariopi-server 2>/dev/null; then
+  echo "  ariopi-server etkin ve su an calisiyor; acilista otomatik baslayacak."
+else
+  echo "  Uyari: ariopi-server baslatilamadi. Kontrol: sudo systemctl status ariopi-server"
+fi
 
 echo ""
 echo "=============================================="
-echo "  Kurulum tamamlandı."
+echo "  Kurulum tamamlandi. Sistem ve servis hazir."
 echo "=============================================="
+echo "Sunucu acilista otomatik baslar (ariopi-server)."
 echo "systemd: sudo systemctl status ariopi-server | start | stop | restart"
 echo ""
 echo "Erişim adresleri:"

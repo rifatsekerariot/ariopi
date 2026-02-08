@@ -96,22 +96,40 @@ sudo systemctl daemon-reload
 sudo reboot
 ```
 
-**Siyah ekran / yanıp sönen imleç (Pi'de görüntü yok):**
+**Chromium hiç ekrana gelmiyor (sadece siyah ekran + yanıp sönen imleç):**
 
-1. **HDMI zorla açık:** Pi'de (veya SD kartı başka bilgisayarda açıp) `/boot/config.txt` veya `/boot/firmware/config.txt` dosyasına şu satırı ekleyin (yoksa): `hdmi_force_hotplug=1` — Kaydedip Pi'yi yeniden başlatın.
+Bu durumda X (grafik ortam) büyük ihtimalle hiç başlamıyor; ekranda gördüğünüz konsol (tty1) veya X’in açılamadığı hâlidir.
+
+1. **Log’a bakın (SSH ile):** Pi’ye SSH ile bağlanıp `cat /tmp/ariopi-startx.log` yazın. Kurulum scripti startx’i bir wrapper ile çalıştırır ve hata çıktısını bu dosyaya yazar. Log’da “startx baslatiliyor” görünüp sonrasında hata varsa, o satırlar X’in neden başlamadığını gösterir.
+2. **startx’i elle çalıştırın:** SSH ile giriş yapın. Sonra **Pi’ye klavye ve monitör bağlıyken** Ctrl+Alt+F1 ile tty1’e geçin, kullanıcı adı/şifre ile giriş yapıp `startx` yazın. Ekranda çıkan hata mesajını not alın (ör. “no screens found”, “cannot open display”).
+3. **Oturum açılışında startx tetiklensin:** Kurulum scripti hem `.profile` hem `.bash_profile` içine “tty1’de ve DISPLAY yoksa wrapper çalıştır” satırını yazar. Kontrol: `grep ariopi /home/ariot/.profile` ve `grep ariopi /home/ariot/.bash_profile` (kullanıcı adınız farklıysa onu yazın). Wrapper: `ls -la /home/ariot/ariopi-kiosk-startx.sh`. Yoksa kurulumu tekrar çalıştırın: `sudo bash scripts/pi/setup.sh`.
+4. **Xorg ve Openbox kurulu mu:** `dpkg -l xorg openbox | grep -E '^ii'`. Eksikse: `sudo apt-get install -y xorg openbox`.
+5. **Raspberry Pi OS / imaj:** “Raspberry Pi OS (Legacy)” veya “Lite” kullanın. Yeni “Bookworm Desktop” (Wayland) ile X11 kiosk bazen sorun çıkarır; Lite imajı X11 kullanır.
+
+**Siyah ekran / yanıp sönen imleç (HDMI algılanmıyor vb.):**
+
+1. **HDMI zorla açık:** `/boot/config.txt` veya `/boot/firmware/config.txt` dosyasına (yoksa) `hdmi_force_hotplug=1` ekleyin; kaydedip `sudo reboot`.
 2. **Açılışta ağı bekle:** `sudo raspi-config` → Boot → **Wait for network at boot** açın.
-3. **Chromium'dan önce bekleme:** Kurulum scripti Openbox'ta `sleep 8` ve `xset s off` kullanıyor. Hâlâ siyah kalıyorsa `~/.config/openbox/autostart` içinde `sleep 8` değerini 15–20 yapıp deneyin.
-4. **X çalışıyor mu?** Yanıp sönen imleç bazen konsol (tty) demektir. SSH veya Ctrl+Alt+F2 ile giriş yapıp `startx` yazın. Hata alırsanız `/boot/config.txt` içinde `#dtoverlay=vc4-kms-v3d` satırını yorum satırı yapıp reboot deneyin.
+3. **Chromium’dan önce bekleme:** `~/.config/openbox/autostart` içinde `sleep 8` değerini 15–20 yapıp deneyin.
+4. **X açılmıyorsa:** Yukarıdaki “Chromium hiç ekrana gelmiyor” adımlarını uygulayın; gerekirse `/boot/config.txt` içinde `#dtoverlay=vc4-kms-v3d` satırını yorum satırı yapıp reboot deneyin.
+
+**Video otomatik oynatılmıyor / ekranda video yok (ses var siyah ekran):**
+
+1. **Kurulum scripti (önerilen):** Pi kurulum scripti Chromium’a `--autoplay-policy=no-user-gesture-required` ekler ve `/boot/config.txt`’e `gpu_mem=256` yazar. Yeniden kurulum yapın veya aşağıdakileri elle uygulayın.
+2. **Chromium bayrağı:** `~/.config/openbox/autostart` içinde Chromium satırına `--autoplay-policy=no-user-gesture-required` ekleyin (script ile kurulduysa zaten vardır).
+3. **GPU bellek:** `/boot/config.txt` veya `/boot/firmware/config.txt`’e `gpu_mem=256` ekleyin (video siyah ekran/performans için sık önerilir). Değişiklikten sonra `sudo reboot`.
+4. **Otomatik oynatma (açılışta):** Player, bir kez Admin’den “Oynat” ile oynatılan videoyu hatırlar; Pi yeniden açıldığında aynı video ~1,5 saniye sonra otomatik başlar. İlk seferde Admin’den en az bir kez “Oynat” demeniz gerekir.
+5. **Video formatı:** Pi’de donanım desteği için 720p MP4 (H.264) kullanın; daha ağır formatlar takılabilir veya siyah kalabilir.
 
 ---
 
 ## Sıralı kurulum özeti
 
 1. **Sunucuda:** `sudo bash scripts/server/setup.sh`  
-   - IP ve port girin. Servis kurulur ve açılışta çalışır.
+   - IP/domain ve port girin. Node, server, build, systemd kurulur; ariopi-server açılışta otomatik başlar.
 
 2. **Pi’de:** `sudo bash scripts/pi/setup.sh`  
-   - Sunucu IP ve port girin. Servis kurulur. `sudo reboot` yapın.
+   - Sunucu IP ve port girin. Xorg, Openbox, Chromium, autologin, HDMI/GPU kurulur; açılışta kiosk otomatik başlar. Son adım: `sudo reboot`.
 
 3. **Kullanım:**  
    - `http://SUNUCU_IP:3000/admin/` → Video yükle, cihaz seç, cihaza gönder / oynat / durdur / sil.  
