@@ -83,11 +83,22 @@ export default function App() {
         video.src = url;
         video.muted = true;
         video.playsInline = true;
+        video.loop = true;
+        video.setAttribute('loop', '');
         video.load();
-        await video.play();
         setCurrentVideoId(videoId);
         currentVideoIdRef.current = videoId;
+        await new Promise((resolve, reject) => {
+          video.oncanplay = () => resolve();
+          video.onerror = () => reject(video.error);
+          if (video.readyState >= 3) resolve();
+        });
+        await video.play();
         socket.emit('player_status', { status: 'playing' });
+        try {
+          if (video.requestFullscreen) video.requestFullscreen();
+          else if (video.webkitRequestFullscreen) video.webkitRequestFullscreen();
+        } catch (_) {}
       } catch (e) {
         setError(e.message || 'Oynatılamadı');
         setCurrentVideoId(null);
@@ -95,6 +106,10 @@ export default function App() {
     });
 
     socket.on('stop', () => {
+      try {
+        if (document.fullscreenElement) document.exitFullscreen();
+        else if (document.webkitFullscreenElement) document.webkitExitFullscreen();
+      } catch (_) {}
       const video = videoRef.current;
       if (video) {
         video.pause();
@@ -133,16 +148,7 @@ export default function App() {
     return () => socket.disconnect();
   }, [playerId]);
 
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    const onEnded = () => {
-      setCurrentVideoId(null);
-      socketRef.current?.emit('player_status', { status: 'stopped' });
-    };
-    video.addEventListener('ended', onEnded);
-    return () => video.removeEventListener('ended', onEnded);
-  }, []);
+  // Loop ile video biter bitmez tekrar başlar; sadece Durdur/Sil ile durur
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-slate-950">
@@ -167,8 +173,9 @@ export default function App() {
         ref={videoRef}
         muted
         playsInline
+        loop
         className={`absolute inset-0 h-full w-full object-contain ${currentVideoId ? 'block' : 'hidden'}`}
-        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
+        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: currentVideoId ? 5 : 0 }}
       />
     </div>
   );
