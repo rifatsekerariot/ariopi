@@ -108,10 +108,9 @@ echo "[4/8] .xinitrc (openbox-session)..."
 echo 'exec openbox-session' > /home/"$KIOSK_USER"/.xinitrc
 chown "$KIOSK_USER":"$KIOSK_USER" /home/"$KIOSK_USER"/.xinitrc
 
-# --- systemd kiosk servisi (production: açılışta kiosk) ---
+# --- systemd kiosk servisi (vt1 = HDMI'da doğrudan kiosk görünsün) ---
 echo ""
 echo "[5/8] systemd kiosk servisi kuruluyor (ariopi-kiosk)..."
-# Xorg yolu (Debian/Raspberry Pi OS)
 XORG_BIN=""
 for x in /usr/lib/xorg/Xorg /usr/lib/xserver-Xorg/Xorg /usr/bin/Xorg X; do
   if command -v "$x" &>/dev/null || [ -x "$x" ]; then
@@ -120,6 +119,9 @@ for x in /usr/lib/xorg/Xorg /usr/lib/xserver-Xorg/Xorg /usr/bin/Xorg X; do
   fi
 done
 [ -z "$XORG_BIN" ] && XORG_BIN="X"
+
+# tty1'de getty çalışmasın; kiosk tty1'i kullansın (HDMI'da kiosk görünsün)
+systemctl mask getty@tty1.service 2>/dev/null || true
 
 KIOSK_SERVICE="/etc/systemd/system/ariopi-kiosk.service"
 cat > "$KIOSK_SERVICE" << EOF
@@ -132,7 +134,7 @@ Type=simple
 User=$KIOSK_USER
 Environment=HOME=/home/$KIOSK_USER
 Environment=DISPLAY=:0
-ExecStart=/usr/bin/xinit /home/$KIOSK_USER/.xinitrc -- $XORG_BIN :0 vt7
+ExecStart=/usr/bin/xinit /home/$KIOSK_USER/.xinitrc -- $XORG_BIN :0 vt1
 Restart=on-failure
 RestartSec=10
 
@@ -141,17 +143,11 @@ WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
 systemctl enable ariopi-kiosk
-echo "  Servis kuruldu ve açılışta başlamak üzere etkinleştirildi."
+echo "  Servis kuruldu; kiosk vt1'de (HDMI'da) açılacak."
 
-# --- Tty1 otomatik giriş (isteğe bağlı konsol erişimi) ---
+# --- Konsol erişimi tty2'de (Ctrl+Alt+F2) ---
 echo ""
-echo "[6/8] Tty1 otomatik giriş (konsol erişimi için)..."
-mkdir -p /etc/systemd/system/getty@tty1.service.d
-cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << EOF
-[Service]
-ExecStart=
-ExecStart=-/sbin/agetty --autologin $KIOSK_USER --noclear %I \$TERM
-EOF
+echo "[6/8] Konsol tty2'de erişilebilir (Ctrl+Alt+F2)."
 
 # --- Player URL'yi kiosk kullanıcı ortamında sakla (isteğe bağlı) ---
 echo ""
@@ -167,7 +163,7 @@ echo "=============================================="
 echo "Player URL: $PLAYER_URL"
 echo ""
 echo "systemd: sudo systemctl status ariopi-kiosk | start | stop | restart"
-echo "Kiosk açılışta otomatik başlar. Konsol için tty1'de $KIOSK_USER olarak giriş yapılır."
+echo "Kiosk açılışta HDMI'da (vt1) otomatik başlar. Konsol: Ctrl+Alt+F2 (tty2)."
 echo ""
 echo "Sunucunun bu Pi'ye erişilebilir olduğundan emin olun (firewall, aynı ağ)."
 echo "Yeniden başlatın: sudo reboot"

@@ -83,6 +83,15 @@ Kurulumdan sonra Pi’yi yeniden başlatın; kiosk systemd ile açılışta baş
 - **systemd:** `sudo systemctl status ariopi-kiosk` | `start` | `stop` | `restart`
 - `sudo reboot`
 
+**Açılışta konsol görünüyorsa (HDMI'da kiosk yok):** Eski kurulumda kiosk vt7'de başlıyordu. Pi'de şunu çalıştırın (kiosk vt1'de, yani HDMI'da açılsın):
+```bash
+sudo systemctl mask getty@tty1.service
+sudo sed -i 's/ vt7$/ vt1/' /etc/systemd/system/ariopi-kiosk.service
+sudo systemctl daemon-reload
+sudo systemctl restart ariopi-kiosk
+sudo reboot
+```
+
 ---
 
 ## Sıralı kurulum özeti
