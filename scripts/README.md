@@ -8,9 +8,9 @@ Bu klasör sunucu ve Raspberry Pi için **interaktif kurulum scriptleri** içeri
 scripts/
 ├── README.md           # Bu dosya
 ├── server/
-│   └── setup.sh        # Sunucu kurulumu (Node, admin/player build, .env, isteğe bağlı systemd)
+│   └── setup.sh        # Sunucu kurulumu (Node, build, .env, systemd)
 └── pi/
-    └── setup.sh        # Raspberry Pi kiosk kurulumu (Xorg, Openbox, Chromium)
+    └── setup.sh        # Pi kiosk kurulumu (Xorg, Openbox, Chromium, systemd)
 ```
 
 ---
@@ -25,32 +25,27 @@ scripts/
 2. Server, admin ve player bağımlılıklarını yükler.
 3. Admin ve player’ı production için build eder ve `server/public/` altına kopyalar.
 4. `server/.env` oluşturur (PORT, BIND).
-5. İsteğe bağlı: systemd servisi (`ariopi-server`) ekler.
+5. **systemd servisi `ariopi-server`** kurulur ve açılışta başlamak üzere etkinleştirilir (production ready).
 
 **İnteraktif sorular:**
 
 | Soru | Açıklama | Varsayılan |
 |------|----------|------------|
-| Sunucu IP adresi | Bu makinenin ağdaki IP’si (admin/player build’de socket URL için kullanılır) | 0.0.0.0 |
+| Sunucu IP adresi | Bu makinenin ağdaki IP’si (build’de socket URL) | 0.0.0.0 |
 | Port | Sunucu portu | 3000 |
-| Bind adresi | Dinlenecek adres (tüm ağ: 0.0.0.0) | 0.0.0.0 |
-| systemd servisi | Açılışta otomatik başlasın mı? | Hayır |
+| Bind adresi | Dinlenecek adres | 0.0.0.0 |
 
 **Kullanım:**
 
 ```bash
-# Proje kök dizininden
 sudo bash scripts/server/setup.sh
-
-# veya scripts/server içinden
-cd scripts/server && sudo bash setup.sh
 ```
 
-Kurulumdan sonra:
+Kurulumdan sonra servis otomatik başlar ve her açılışta çalışır.
 
+- **systemd:** `sudo systemctl status ariopi-server` | `start` | `stop` | `restart`
 - Admin: `http://SUNUCU_IP:PORT/admin/`
 - Player: `http://SUNUCU_IP:PORT/player/`
-- Sunucuyu başlatmak: `cd server && npm start` (veya `sudo systemctl start ariopi-server`)
 
 ---
 
@@ -62,8 +57,9 @@ Kurulumdan sonra:
 
 1. Paket listesini günceller.
 2. Xorg, Openbox, Chromium (veya chromium-browser), unclutter kurar.
-3. Openbox autostart’a kiosk komutunu yazar (Player URL’si scriptte sorulur).
-4. Tty1 otomatik giriş ve konsolda `startx` ile X + kiosk başlatmayı ayarlar.
+3. Openbox autostart’a kiosk komutunu yazar (Player URL scriptte sorulur).
+4. **systemd servisi `ariopi-kiosk`** kurulur: xinit ile X + Openbox + Chromium kiosk; açılışta otomatik başlar (production ready).
+5. Tty1 otomatik giriş (konsol erişimi için).
 
 **İnteraktif sorular:**
 
@@ -72,33 +68,29 @@ Kurulumdan sonra:
 | Sunucu IP adresi | ArioPi sunucusunun IP’si |
 | Sunucu port | Sunucu portu (genelde 3000) |
 
-Player URL otomatik oluşturulur: `http://SUNUCU_IP:PORT/player/`
+Player URL otomatik: `http://SUNUCU_IP:PORT/player/`
 
 **Kullanım:**
 
 ```bash
-# Proje kök dizininden (veya script’in bulunduğu yerden)
 sudo bash scripts/pi/setup.sh
 ```
 
-Kurulumdan sonra Pi’yi yeniden başlatın; tty1’de otomatik giriş yapılıp Chromium kiosk modunda Player sayfası açılır:
+Kurulumdan sonra Pi’yi yeniden başlatın; kiosk systemd ile açılışta başlar.
 
-```bash
-sudo reboot
-```
+- **systemd:** `sudo systemctl status ariopi-kiosk` | `start` | `stop` | `restart`
+- `sudo reboot`
 
 ---
 
 ## Sıralı kurulum özeti
 
 1. **Sunucuda:** `sudo bash scripts/server/setup.sh`  
-   - Sunucu IP’sini ve portu girin.  
-   - Kurulum bitince `cd server && npm start` (veya systemd ile başlatın).
+   - IP ve port girin. Servis kurulur ve açılışta çalışır.
 
 2. **Pi’de:** `sudo bash scripts/pi/setup.sh`  
-   - Sunucu IP ve portu girin (Player URL buna göre ayarlanır).  
-   - `sudo reboot` ile Pi’yi yeniden başlatın.
+   - Sunucu IP ve port girin. Servis kurulur. `sudo reboot` yapın.
 
 3. **Kullanım:**  
-   - Bilgisayardan `http://SUNUCU_IP:3000/admin/` ile admin panelini açın, bir Player seçip “Start Stream” ile yayın başlatın.  
-   - Pi’de TV’de Player sayfası açık olacak ve yayın otomatik görüntülenir.
+   - `http://SUNUCU_IP:3000/admin/` → Player seç → Start Stream.  
+   - Pi’de TV’de kiosk otomatik açık; yayın burada görüntülenir.

@@ -42,12 +42,12 @@ fi
 
 # --- Sistem güncellemesi ---
 echo ""
-echo "[1/6] Paket listesi güncelleniyor..."
+echo "[1/7] Paket listesi güncelleniyor..."
 apt-get update -qq
 
 # --- GUI ve Chromium ---
 echo ""
-echo "[2/6] Xorg, Openbox ve Chromium kuruluyor..."
+echo "[2/7] Xorg, Openbox ve Chromium kuruluyor..."
 apt-get install -y --no-install-recommends \
   xorg \
   openbox \
@@ -67,7 +67,7 @@ echo "  Chromium komutu: $CHROMIUM_CMD"
 
 # --- Openbox autostart ---
 echo ""
-echo "[3/6] Openbox autostart (kiosk) yazılıyor..."
+echo "[3/7] Openbox autostart (kiosk) yazılıyor..."
 mkdir -p /home/"$KIOSK_USER"/.config/openbox
 cat > /home/"$KIOSK_USER"/.config/openbox/autostart << EOF
 # İmleci gizle (0.5 saniye hareketsizlikten sonra)
@@ -85,9 +85,50 @@ $CHROMIUM_CMD \\
 EOF
 chown -R "$KIOSK_USER":"$KIOSK_USER" /home/"$KIOSK_USER"/.config/openbox
 
-# --- Otomatik giriş (getty) ---
+# --- .xinitrc (openbox) ---
 echo ""
-echo "[4/6] Tty1 otomatik giriş ayarlanıyor..."
+echo "[4/7] .xinitrc (openbox-session)..."
+echo 'exec openbox-session' > /home/"$KIOSK_USER"/.xinitrc
+chown "$KIOSK_USER":"$KIOSK_USER" /home/"$KIOSK_USER"/.xinitrc
+
+# --- systemd kiosk servisi (production: açılışta kiosk) ---
+echo ""
+echo "[5/7] systemd kiosk servisi kuruluyor (ariopi-kiosk)..."
+# Xorg yolu (Debian/Raspberry Pi OS)
+XORG_BIN=""
+for x in /usr/lib/xorg/Xorg /usr/lib/xserver-Xorg/Xorg /usr/bin/Xorg X; do
+  if command -v "$x" &>/dev/null || [ -x "$x" ]; then
+    XORG_BIN="$x"
+    break
+  fi
+done
+[ -z "$XORG_BIN" ] && XORG_BIN="X"
+
+KIOSK_SERVICE="/etc/systemd/system/ariopi-kiosk.service"
+cat > "$KIOSK_SERVICE" << EOF
+[Unit]
+Description=ArioPi Kiosk (Chromium Player)
+After=multi-user.target
+
+[Service]
+Type=simple
+User=$KIOSK_USER
+Environment=HOME=/home/$KIOSK_USER
+Environment=DISPLAY=:0
+ExecStart=/usr/bin/xinit /home/$KIOSK_USER/.xinitrc -- $XORG_BIN :0 vt7
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable ariopi-kiosk
+echo "  Servis kuruldu ve açılışta başlamak üzere etkinleştirildi."
+
+# --- Tty1 otomatik giriş (isteğe bağlı konsol erişimi) ---
+echo ""
+echo "[6/7] Tty1 otomatik giriş (konsol erişimi için)..."
 mkdir -p /etc/systemd/system/getty@tty1.service.d
 cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << EOF
 [Service]
@@ -95,21 +136,12 @@ ExecStart=
 ExecStart=-/sbin/agetty --autologin $KIOSK_USER --noclear %I \$TERM
 EOF
 
-# --- .profile ile startx ---
+# --- Player URL'yi kiosk kullanıcı ortamında sakla (isteğe bağlı) ---
 echo ""
-echo "[5/6] Konsol girişinde X başlatma (.profile)..."
-if ! grep -q 'startx' /home/"$KIOSK_USER"/.profile 2>/dev/null; then
-  echo '' >> /home/"$KIOSK_USER"/.profile
-  echo '# ArioPi kiosk: tty1 girişinde X başlat' >> /home/"$KIOSK_USER"/.profile
-  echo 'if [ -z "$DISPLAY" ] && [ "$(tty)" = /dev/tty1 ]; then startx; fi' >> /home/"$KIOSK_USER"/.profile
-  chown "$KIOSK_USER":"$KIOSK_USER" /home/"$KIOSK_USER"/.profile
-fi
-
-# --- .xinitrc (openbox) ---
-echo ""
-echo "[6/6] .xinitrc (openbox-session)..."
-echo 'exec openbox-session' > /home/"$KIOSK_USER"/.xinitrc
-chown "$KIOSK_USER":"$KIOSK_USER" /home/"$KIOSK_USER"/.xinitrc
+echo "[7/7] Kurulum özeti yazılıyor..."
+mkdir -p /home/"$KIOSK_USER"/.config/ariopi
+echo "PLAYER_URL=$PLAYER_URL" > /home/"$KIOSK_USER"/.config/ariopi/player-url
+chown -R "$KIOSK_USER":"$KIOSK_USER" /home/"$KIOSK_USER"/.config/ariopi
 
 echo ""
 echo "=============================================="
@@ -117,10 +149,9 @@ echo "  Pi kurulumu tamamlandı."
 echo "=============================================="
 echo "Player URL: $PLAYER_URL"
 echo ""
-echo "Sunucunun bu Pi'ye erişilebilir olduğundan emin olun (firewall, aynı ağ)."
-echo "Yeniden başlattıktan sonra tty1'de otomatik giriş yapılıp kiosk açılacak:"
-echo "  sudo reboot"
+echo "systemd: sudo systemctl status ariopi-kiosk | start | stop | restart"
+echo "Kiosk açılışta otomatik başlar. Konsol için tty1'de $KIOSK_USER olarak giriş yapılır."
 echo ""
-echo "Manuel test için (X içinde):"
-echo "  $CHROMIUM_CMD --kiosk $PLAYER_URL"
+echo "Sunucunun bu Pi'ye erişilebilir olduğundan emin olun (firewall, aynı ağ)."
+echo "Yeniden başlatın: sudo reboot"
 echo ""

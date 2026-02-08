@@ -49,7 +49,7 @@ fi
 
 # --- Node.js kontrolü ---
 echo ""
-echo "[1/6] Node.js kontrol ediliyor..."
+echo "[1/7] Node.js kontrol ediliyor..."
 if ! command -v node &>/dev/null; then
   echo "Node.js bulunamadı. Kuruluyor (NodeSource 20.x)..."
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -60,13 +60,13 @@ echo "  npm:  $(npm -v)"
 
 # --- Sunucu bağımlılıkları ---
 echo ""
-echo "[2/6] Server bağımlılıkları yükleniyor..."
+echo "[2/7] Server bağımlılıkları yükleniyor..."
 cd "$PROJECT_ROOT/server"
 npm install --production=false
 
 # --- Admin build ---
 echo ""
-echo "[3/6] Admin paneli build ediliyor (VITE_SOCKET_URL=$SOCKET_URL, base=/admin/)..."
+echo "[3/7] Admin paneli build ediliyor (VITE_SOCKET_URL=$SOCKET_URL, base=/admin/)..."
 cd "$PROJECT_ROOT/admin"
 npm install
 export VITE_SOCKET_URL="$SOCKET_URL"
@@ -75,7 +75,7 @@ npm run build
 
 # --- Player build ---
 echo ""
-echo "[4/6] Player build ediliyor (VITE_SOCKET_URL=$SOCKET_URL, base=/player/)..."
+echo "[4/7] Player build ediliyor (VITE_SOCKET_URL=$SOCKET_URL, base=/player/)..."
 cd "$PROJECT_ROOT/player"
 npm install
 export VITE_SOCKET_URL="$SOCKET_URL"
@@ -84,7 +84,7 @@ npm run build
 
 # --- Static dosyaları server/public altına kopyala ---
 echo ""
-echo "[5/6] Build çıktıları server/public altına kopyalanıyor..."
+echo "[5/7] Build çıktıları server/public altına kopyalanıyor..."
 mkdir -p "$PROJECT_ROOT/server/public"
 rm -rf "$PROJECT_ROOT/server/public/admin" "$PROJECT_ROOT/server/public/player"
 cp -r "$PROJECT_ROOT/admin/dist" "$PROJECT_ROOT/server/public/admin"
@@ -94,7 +94,7 @@ echo "  /player -> server/public/player"
 
 # --- .env oluştur ---
 echo ""
-echo "[6/6] server/.env oluşturuluyor..."
+echo "[6/7] server/.env oluşturuluyor..."
 cat > "$PROJECT_ROOT/server/.env" << EOF
 # ArioPi Server — Bu dosya setup.sh tarafından oluşturuldu
 PORT=$PORT
@@ -103,21 +103,22 @@ EOF
 echo "  PORT=$PORT"
 echo "  BIND=$BIND"
 
-# --- systemd servisi (isteğe bağlı) ---
-read -p "systemd servisi kurulsun mu? (sunucu açılışta otomatik başlar) (e/h) [h]: " INSTALL_SERVICE
-INSTALL_SERVICE="${INSTALL_SERVICE:-h}"
-if [ "$INSTALL_SERVICE" = "e" ] || [ "$INSTALL_SERVICE" = "E" ]; then
-  SERVICE_FILE="/etc/systemd/system/ariopi-server.service"
-  cat > "$SERVICE_FILE" << EOF
+# --- systemd servisi (production: her zaman kurulu) ---
+echo ""
+echo "[7/7] systemd servisi kuruluyor (ariopi-server)..."
+SERVICE_FILE="/etc/systemd/system/ariopi-server.service"
+NODE_PATH=$(which node)
+cat > "$SERVICE_FILE" << EOF
 [Unit]
 Description=ArioPi Digital Signage Server
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=$SUDO_USER
 WorkingDirectory=$PROJECT_ROOT/server
-ExecStart=$(which node) index.js
+ExecStart=$NODE_PATH index.js
 Restart=on-failure
 RestartSec=5
 Environment=NODE_ENV=production
@@ -126,25 +127,22 @@ EnvironmentFile=$PROJECT_ROOT/server/.env
 [Install]
 WantedBy=multi-user.target
 EOF
-  systemctl daemon-reload
-  systemctl enable ariopi-server
-  echo "  systemd servisi eklendi: ariopi-server"
-  echo "  Başlatmak için: sudo systemctl start ariopi-server"
-fi
+systemctl daemon-reload
+systemctl enable ariopi-server
+systemctl start ariopi-server 2>/dev/null || true
+echo "  Servis kuruldu ve açılışta başlamak üzere etkinleştirildi."
 
 echo ""
 echo "=============================================="
 echo "  Kurulum tamamlandı."
 echo "=============================================="
-echo "Sunucuyu başlatmak için:"
-echo "  cd $PROJECT_ROOT/server && npm start"
+echo "systemd: sudo systemctl status ariopi-server | start | stop | restart"
 echo ""
-echo "Erişim adresleri (bu makine üzerinden):"
+echo "Erişim adresleri:"
 echo "  Admin:  http://localhost:${PORT}/admin/"
 echo "  Player: http://localhost:${PORT}/player/"
 if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "0.0.0.0" ]; then
-  echo "Ağ üzerinden:"
-  echo "  Admin:  http://${SERVER_IP}:${PORT}/admin/"
-  echo "  Player: http://${SERVER_IP}:${PORT}/player/"
+  echo "  Ağ: Admin  http://${SERVER_IP}:${PORT}/admin/"
+  echo "  Ağ: Player http://${SERVER_IP}:${PORT}/player/"
 fi
 echo ""
