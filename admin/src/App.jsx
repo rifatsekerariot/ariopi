@@ -13,6 +13,11 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
   const fileInputRef = useRef(null);
+  // Anthias: merkezden yönetilen ekranlar
+  const [anthiasDevices, setAnthiasDevices] = useState([]);
+  const [anthiasStatus, setAnthiasStatus] = useState({});
+  const [anthiasForm, setAnthiasForm] = useState({ name: '', baseUrl: '' });
+  const [anthiasSending, setAnthiasSending] = useState(null);
 
   useEffect(() => {
     const s = io(SOCKET_URL, { transports: ['websocket', 'polling'], reconnection: true });
@@ -43,6 +48,65 @@ export default function App() {
       .then((data) => setLibrary(data.videos || []))
       .catch(() => setLibrary([]));
   }, [connected]);
+
+  const refreshAnthiasDevices = () => {
+    fetch(`${API_BASE}/api/anthias/devices`)
+      .then((r) => r.json())
+      .then((data) => setAnthiasDevices(data.devices || []))
+      .catch(() => setAnthiasDevices([]));
+  };
+  useEffect(() => {
+    if (!connected) return;
+    refreshAnthiasDevices();
+  }, [connected]);
+
+  const checkAnthiasStatus = (id) => {
+    fetch(`${API_BASE}/api/anthias/devices/${id}/status`)
+      .then((r) => r.json())
+      .then((data) => setAnthiasStatus((s) => ({ ...s, [id]: data })))
+      .catch(() => setAnthiasStatus((s) => ({ ...s, [id]: { online: false } })));
+  };
+
+  const addAnthiasDevice = (e) => {
+    e.preventDefault();
+    if (!anthiasForm.baseUrl.trim()) return;
+    setError(null);
+    fetch(`${API_BASE}/api/anthias/devices`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: anthiasForm.name.trim(), baseUrl: anthiasForm.baseUrl.trim() }),
+    })
+      .then((r) => r.json())
+      .then(() => {
+        setAnthiasForm({ name: '', baseUrl: '' });
+        refreshAnthiasDevices();
+      })
+      .catch((err) => setError(err.message));
+  };
+
+  const removeAnthiasDevice = (id) => {
+    if (!confirm('Bu ekranı listeden kaldırmak istediğinize emin misiniz?')) return;
+    fetch(`${API_BASE}/api/anthias/devices/${id}`, { method: 'DELETE' })
+      .then(() => refreshAnthiasDevices())
+      .catch((err) => setError(err.message));
+  };
+
+  const playVideoOnAnthias = (deviceId, videoId) => {
+    setAnthiasSending(deviceId);
+    setError(null);
+    const videoUrl = `${API_BASE}/api/videos/${videoId}/file`;
+    fetch(`${API_BASE}/api/anthias/devices/${deviceId}/play-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: videoUrl }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.error) setError(data.error);
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setAnthiasSending(null));
+  };
 
   const refreshLibrary = () => {
     fetch(`${API_BASE}/api/videos`)
@@ -246,6 +310,92 @@ export default function App() {
           )}
         </section>
       </div>
+
+      {/* Anthias ekranları: merkezden yönetilen Pi ekranları */}
+      <section className="mt-10 rounded-lg border border-slate-700 bg-slate-800/50 p-4">
+        <h2 className="text-lg font-medium text-slate-200">Anthias ekranları</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Pi üzerinde Anthias çalışan ekranları ekleyin; merkezden hangi videonun o ekranda oynayacağını seçin.
+        </p>
+        <form onSubmit={addAnthiasDevice} className="mt-4 flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-slate-400">Ad (isteğe bağlı)</span>
+            <input
+              type="text"
+              placeholder="Örn. Lobi ekranı"
+              value={anthiasForm.name}
+              onChange={(e) => setAnthiasForm((f) => ({ ...f, name: e.target.value }))}
+              className="w-40 rounded border border-slate-600 bg-slate-700 px-2 py-1.5 text-sm text-white placeholder-slate-500"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-slate-400">Cihaz adresi (zorunlu)</span>
+            <input
+              type="text"
+              placeholder="http://192.168.1.8:8000"
+              value={anthiasForm.baseUrl}
+              onChange={(e) => setAnthiasForm((f) => ({ ...f, baseUrl: e.target.value }))}
+              className="min-w-[220px] rounded border border-slate-600 bg-slate-700 px-2 py-1.5 text-sm text-white placeholder-slate-500"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={!anthiasForm.baseUrl.trim() || !connected}
+            className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
+          >
+            Ekran ekle
+          </button>
+        </form>
+        <ul className="mt-4 space-y-3">
+          {anthiasDevices.length === 0 && (
+            <li className="text-sm text-slate-500">Henüz Anthias ekranı eklenmedi. Yukarıdaki formla Pi adresini (örn. http://192.168.1.8:8000) girin.</li>
+          )}
+          {anthiasDevices.map((dev) => (
+            <li
+              key={dev.id}
+              className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-600 bg-slate-700/50 p-3"
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={`h-2 w-2 rounded-full ${anthiasStatus[dev.id]?.online ? 'bg-green-500' : anthiasStatus[dev.id] === undefined ? 'bg-slate-500' : 'bg-red-500'}`}
+                  title={anthiasStatus[dev.id]?.online ? 'Çevrimiçi' : 'Çevrimdışı'}
+                />
+                <span className="font-medium text-slate-200">{dev.name || dev.baseUrl}</span>
+                <span className="text-xs text-slate-500">{dev.baseUrl}</span>
+                <button
+                  type="button"
+                  onClick={() => checkAnthiasStatus(dev.id)}
+                  className="rounded bg-slate-600 px-2 py-0.5 text-xs text-slate-300 hover:bg-slate-500"
+                >
+                  Durum kontrol
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {library.map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => playVideoOnAnthias(dev.id, v.id)}
+                    disabled={anthiasSending === dev.id || !connected}
+                    className="rounded bg-sky-600 px-2 py-1 text-xs text-white hover:bg-sky-500 disabled:opacity-50"
+                    title={`"${v.name}" bu ekranda oynat`}
+                  >
+                    {anthiasSending === dev.id ? '…' : v.name.slice(0, 20)}
+                    {v.name.length > 20 ? '…' : ''} → Oynat
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => removeAnthiasDevice(dev.id)}
+                  className="rounded bg-red-600/80 px-2 py-1 text-xs text-white hover:bg-red-500"
+                >
+                  Kaldır
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
   );
 }

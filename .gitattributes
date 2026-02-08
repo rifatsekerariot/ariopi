@@ -1,0 +1,2 @@
+# Shell scripts: always LF (Linux/Pi'de sorunsuz calissin)
+*.sh text eol=lf

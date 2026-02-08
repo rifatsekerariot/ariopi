@@ -19,6 +19,8 @@ echo ""
 
 read -p "Sunucu adresi (ornek: http://188.132.211.90:3000): " SERVER_URL
 SERVER_URL="${SERVER_URL:-http://localhost:3000}"
+# Eksik http:// ekle
+case "$SERVER_URL" in http://*) ;; https://*) ;; *) SERVER_URL="http://$SERVER_URL" ;; esac
 read -p "Bu cihazin Player ID'si (ornek: pi_1): " PLAYER_ID
 PLAYER_ID="${PLAYER_ID:-pi_1}"
 echo ""
@@ -62,8 +64,8 @@ echo ""
 echo "[2/8] Paketler guncelleniyor..."
 apt-get update -qq
 echo ""
-echo "[3/8] mpv ve python3 kuruluyor..."
-apt-get install -y --no-install-recommends mpv python3
+echo "[3/8] mpv, python3 ve openvt (kbd) kuruluyor..."
+apt-get install -y --no-install-recommends mpv python3 kbd
 
 # --- Oynatıcı dosyaları ---
 echo ""
@@ -86,10 +88,18 @@ EOF
 chown -R "$USER":"$USER" "$CONFIG_DIR" 2>/dev/null || true
 chmod 644 "$CONFIG_DIR/config.json"
 
+# --- Kullaniciyi video (ve varsa render) grubuna ekle (MPV HDMI/DRM erisimi) ---
+echo ""
+echo "[5b/8] Kullanici video ve tty gruplarina ekleniyor (MPV HDMI/tty1 erisimi)..."
+usermod -aG video "$USER" 2>/dev/null || true
+usermod -aG tty "$USER" 2>/dev/null || true
+getent group render >/dev/null 2>&1 && usermod -aG render "$USER" 2>/dev/null || true
+echo "  Tamamlandi ($USER: video, tty, render varsa)."
+
 # --- systemd servisi (açılışta oynatıcı) ---
 echo ""
-echo "[6/8] Servis kuruluyor (acilista oynatıcı baslar)..."
-sed "s/User=pi/User=$USER/" "$LITE_DIR/ariopi-signage.service" | \
+echo "[6/8] Servis kuruluyor (openvt ile VT1'de oynatıcı baslar)..."
+sed "s|-u pi|-u $USER|g" "$LITE_DIR/ariopi-signage.service" | \
   sed "s|/home/pi|/home/$USER|g" > /etc/systemd/system/ariopi-signage.service
 systemctl daemon-reload
 systemctl enable ariopi-signage
@@ -127,6 +137,9 @@ echo "  curl -X POST $SERVER_URL/api/signage/play -H 'Content-Type: application/
 echo ""
 echo "Video ID'yi sunucu Admin sayfasindaki kutuphaneden alin. Durdurmak icin:"
 echo "  curl -X POST $SERVER_URL/api/signage/stop -H 'Content-Type: application/json' -d '{\"player_id\":\"$PLAYER_ID\"}'"
+echo ""
+echo "HDMI'da sadece acilis bilgisi gorunuyorsa: loglara bakin (cat /tmp/ariopi-signage.log)."
+echo "Servis openvt ile VT1'de calisir; yoksa mpv_vo: \"sdl\" deneyin."
 echo ""
 echo "Son adim: sudo reboot"
 echo ""

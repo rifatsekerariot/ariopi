@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ArioPi — Digital Signage player (Raspberry Pi).
-Açılışta hemen siyah "bekliyor" ekranı açar (tty görünmez), sunucudan video gelince oynatır.
+Açılışta ekran hazır olana kadar bekler, sonra siyah "bekliyor" ekranı açar; sunucudan video gelince oynatır.
 """
 import base64
 import json
@@ -15,9 +15,19 @@ import urllib.error
 
 CONFIG_DIR = os.environ.get("ARIOPI_LITE_CONFIG", "/etc/ariopi-signage")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
-WAITING_PNG = "/tmp/ariopi-waiting.png"  # 1x1 siyah PNG, açılışta ekranı kaplar
+WAITING_PNG = "/tmp/ariopi-waiting.png"
+LOG_FILE = "/tmp/ariopi-signage.log"  # SSH ile kontrol: cat /tmp/ariopi-signage.log
+STARTUP_DELAY = 20  # Boot bittikten, ekran/DRM hazır olsun diye bekle (saniye)
 POLL_INTERVAL = 10
 REQUEST_TIMEOUT = 8
+
+
+def log(msg):
+    try:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
+    except Exception:
+        pass
 
 def load_config():
     path = CONFIG_FILE
@@ -47,7 +57,7 @@ def main():
         sys.exit(1)
     server_url = config.get("server_url", "").rstrip("/")
     player_id = config.get("player_id", "lite_1")
-    mpv_vo = config.get("mpv_vo", "auto")  # auto, drm, rpi, gbm
+    mpv_vo = config.get("mpv_vo", "auto")  # drm, sdl, auto, rpi, gbm (sdl VT gerektirmez)
 
     if not server_url:
         print("Hata: config'ta server_url gerekli.", file=sys.stderr)
@@ -66,30 +76,49 @@ def main():
             with open(WAITING_PNG, "wb") as f:
                 f.write(b)
 
+    def _start_mpv(cmd_list):
+        """MPV baslat; basarili Popen veya None doner."""
+        try:
+            with open(LOG_FILE, "a", encoding="utf-8") as stderr_log:
+                p = subprocess.Popen(
+                    cmd_list,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=stderr_log,
+                    start_new_session=False,
+                )
+            return p
+        except FileNotFoundError:
+            log("HATA: mpv bulunamadi. Kurun: sudo apt install mpv")
+            return None
+        except Exception as e:
+            log(f"HATA mpv baslatma: {e}")
+            return None
+
     def play_waiting():
-        """Siyah bekleme ekranı (sunucuya bağlanıyor / iç bekleniyor)."""
+        """Siyah bekleme ekranı (sunucuya bağlanıyor / iç bekleniyor). DRM basarisizsa SDL dene."""
         nonlocal mpv_proc
         kill_mpv()
         ensure_waiting_image()
-        cmd = [
-            "mpv",
-            "--fs",
-            "--no-osd",
-            "--no-input-default-bindings",
-            f"--vo={mpv_vo}",
-            "--loop=inf",
-            WAITING_PNG,
-        ]
-        try:
-            mpv_proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-        except FileNotFoundError:
-            pass
+        for vo in (mpv_vo, "sdl"):
+            if vo == "auto":
+                vo = "drm"
+            cmd = [
+                "mpv", "--fs", "--osd-level=0", "--no-input-default-bindings",
+                f"--vo={vo}", "--loop=inf", WAITING_PNG,
+            ]
+            mpv_proc = _start_mpv(cmd)
+            if mpv_proc is None:
+                continue
+            time.sleep(2)
+            if mpv_proc.poll() is not None:
+                log(f"vo={vo} basarisiz (cikis {mpv_proc.returncode}), digeri deneniyor.")
+                mpv_proc.wait()
+                mpv_proc = None
+                continue
+            log(f"play_waiting: mpv baslatildi (vo={vo})")
+            return
+        log("HATA: mpv drm ve sdl ile baslatilamadi.")
 
     def kill_mpv():
         nonlocal mpv_proc
@@ -104,26 +133,22 @@ def main():
     def play_url(url):
         nonlocal mpv_proc
         kill_mpv()
-        cmd = [
-            "mpv",
-            "--fs",
-            "--no-osd",
-            "--no-input-default-bindings",
-            "--loop-playlist=inf",
-            f"--vo={mpv_vo}",
-            "--no-audio-display",
-            url,
-        ]
-        try:
-            mpv_proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-        except FileNotFoundError:
-            print("Hata: mpv bulunamadi. Kurun: sudo apt-get install mpv", file=sys.stderr)
+        vo = mpv_vo if mpv_vo != "auto" else "drm"
+        for try_vo in (vo, "sdl"):
+            cmd = [
+                "mpv", "--fs", "--osd-level=0", "--no-input-default-bindings",
+                "--loop-playlist=inf", f"--vo={try_vo}", "--no-audio-display", url,
+            ]
+            mpv_proc = _start_mpv(cmd)
+            if mpv_proc is None:
+                continue
+            time.sleep(2)
+            if mpv_proc.poll() is not None:
+                mpv_proc = None
+                continue
+            log(f"play_url: mpv baslatildi vo={try_vo}")
+            return
+        log("HATA: play_url baslatilamadi.")
 
     def on_sigterm(*_):
         kill_mpv()
@@ -132,7 +157,10 @@ def main():
     signal.signal(signal.SIGTERM, on_sigterm)
     signal.signal(signal.SIGINT, on_sigterm)
 
-    # İlk açılışta hemen ekranı al (tty görünmesin)
+    # Boot bittikten ve ekran/DRM hazır olsun diye bekle
+    log(f"Baslatiliyor; {STARTUP_DELAY}s bekleniyor (ekran hazir olsun)...")
+    time.sleep(STARTUP_DELAY)
+    log("Bekleme bitti, oynatıcı ekrani aciliyor.")
     play_waiting()
 
     while True:
@@ -144,6 +172,9 @@ def main():
             else:
                 play_waiting()
         if mpv_proc and mpv_proc.poll() is not None:
+            code = mpv_proc.returncode
+            log(f"mpv kapandi (returncode={code}), yeniden baslatiliyor.")
+            mpv_proc.wait()  # zombie olmasin
             mpv_proc = None
             current_url = None
             play_waiting()

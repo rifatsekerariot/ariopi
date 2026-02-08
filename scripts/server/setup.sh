@@ -125,15 +125,20 @@ echo "  /player -> server/public/player"
 # --- .env oluştur ---
 echo ""
 echo "[6/8] server/.env oluşturuluyor..."
-# Reverse proxy / bulut: indirme URL'leri farklı domain ise server/.env içine PUBLIC_URL=http://188.132.211.90:3000 ekleyin
+# Pi ve Anthias videoyu indirmek için bu adrese ihtiyaç duyar; reverse proxy kullanıyorsanız .env'de PUBLIC_URL'ı düzenleyin
+PUBLIC_LINE=""
+if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "0.0.0.0" ]; then
+  PUBLIC_LINE="PUBLIC_URL=http://${SERVER_IP}:${PORT}"
+fi
 cat > "$PROJECT_ROOT/server/.env" << EOF
-# ArioPi Server — Bu dosya setup.sh tarafından oluşturuldu
+# ArioPi Server — setup.sh tarafından oluşturuldu
 PORT=$PORT
 BIND=$BIND
-# İndirme adresleri farklı bir adresten verilecekse (reverse proxy): PUBLIC_URL=http://domain:port
+$PUBLIC_LINE
 EOF
 echo "  PORT=$PORT"
 echo "  BIND=$BIND"
+[ -n "$PUBLIC_LINE" ] && echo "  $PUBLIC_LINE"
 
 # --- systemd servisi (production: her zaman kurulu) ---
 echo ""

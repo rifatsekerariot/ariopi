@@ -1,0 +1,107 @@
+# ArioPi — Proje Kuralları ve Agent Kullanımı
+
+## Proje Özeti (güncel)
+
+**Ne:** Dijital tabela — Sunucu video yönetir, Raspberry Pi’de oynatıcı ekranı.
+**Stack:**
+- **Sunucu:** Node.js, Express, Socket.io, multer (video yükleme), REST + Socket API
+- **Admin:** React (Vite), Tailwind — video yükle, cihaza gönder, oynat/durdur/sil
+- **Player (Pi):** MPV + Python — sunucudan poll ile URL alır, MPV ile HDMI’da oynatır (GUI yok)
+**Kurulum:** `scripts/server/setup.sh` (sunucu), `scripts/pi/setup.sh` (Pi). İki script; başka kurulum yok.
+
+---
+
+## Ne Zaman Hangi “Rol” Kullanılsın
+
+Kullanıcı isteği **basit** (tek soru, tek dosya, “şunu düzelt”, “push et”): Doğrudan cevap ver, uzun protokol açma.
+
+Kullanıcı isteği **karmaşık** (yeni özellik, mimari, çok adımlı görev, “sistem tasarla”, “tüm kurulumu düzenle”): Aşağıdaki sırayla düşün ve gerekirse adım adım uygula:
+
+1. **Koordinatör** — Görevi parçala, hangi alanların (backend, script, dokümantasyon) etkileneceğini belirle.
+2. **Mimari** — Yeni bileşen/akış varsa kısa tasarım (sunucu ↔ admin ↔ Pi).
+3. **Backend** — Node (server), React (admin/player) veya Pi tarafı Python kodu; modüler, hata yönetimi.
+4. **DevOps** — systemd, kurulum scriptleri (setup.sh), ortam (.env).
+5. **Test / Doğrulama** — Çalışabilirlik: build, lint, gerekirse test-runner subagent.
+6. **Dokümantasyon** — README, scripts/README, yorum; Türkçe.
+
+Güvenlik veya performans özellikle sorulursa o rolü de ekle.
+
+---
+
+## Rol Rehberi (karmaşık görevlerde)
+
+### Koordinatör
+- Her karmaşık istekte: Hedefi yaz, hangi dosya/script/API’lerin değişeceğini listele, adım sırası ver.
+
+### Backend (Node / React / Python)
+- **Node:** Express route’lar, Socket.io event’leri, multer, dosya yolları; async/await, try/catch.
+- **React:** Admin/Player bileşenleri, state, API/Socket çağrıları; Vite, Tailwind.
+- **Python (Pi):** signage_client.py — config, poll, MPV subprocess; Raspberry Pi Lite’ta çalacak şekilde (GUI yok).
+
+### Mimari
+- Sunucu (Node) ↔ Admin (tarayıcı) ↔ Pi (MPV client); REST + Socket + poll. ASCII diyagram ile kısa akış.
+
+### DevOps
+- `scripts/server/setup.sh`, `scripts/pi/setup.sh`; systemd birimleri; .env; cloud-init/getty gibi boot ayarları.
+
+### Test / Doğrulama
+- `npm run build` (admin, player), `npm install`, lint. İstenirse: “test-runner subagent’ı çalıştır” de.
+
+### Dokümantasyon
+- README.md, scripts/README.md; Türkçe, adım adım kurulum ve sorun giderme.
+
+---
+
+## Subagent Kullanımı (.cursor/agents/)
+
+Projede tanımlı subagent: **test-runner** — Kodun çalışabilirliğini kontrol eder (bağımlılıklar, build, script sözdizimi).
+
+**Nasıl kullanılır:** Sohbette şunu yaz:
+- “test-runner çalıştır” / “test-runner’ı çalıştır”
+- veya “Projenin çalışabilirliğini test-runner ile kontrol et”
+
+Cursor, `.cursor/agents/test-runner.md` içindeki talimatlara göre build/lint/script kontrollerini yapar.
+
+---
+
+## Dil ve Format
+
+- Açıklamalar ve kullanıcıya cevaplar **Türkçe** (isteğe bağlı İngilizce terimler).
+- Kod yorumları ve commit mesajları Türkçe veya İngilizce olabilir; tutarlı olsun.
+- Kurulum ve README: Türkçe.
+
+---
+
+## Kalite Kıstasları
+
+- Sunucu ve frontend: Node/React best practices; hata yönetimi.
+- Pi: Lite OS, GUI yok; MPV + Python, düşük kaynak.
+- Scriptler: Bash sözdizimi doğru, LF satır sonu (.gitattributes).
+- Değişiklik sonrası: build alınabilmeli, scriptler çalışır olmalı.
+
+---
+
+## NASIL KULLANILIR (sizin için özet)
+
+### 1. Normal sorular (tek konu)
+- Doğrudan sorun: “X neden çalışmıyor?”, “Y dosyasını şöyle değiştir”, “GitHub’a push et”.
+- Cevap doğrudan verilir; “multi-agent” başlığı açılmaz.
+
+### 2. Büyük / çok adımlı görevler
+- Örnek: “Sunucuya yeni bir API ekle ve Admin’den kullan”, “Pi kurulumunu tek scripte topla”.
+- Cevap: Önce plan (Koordinatör), sonra ilgili roller (Backend, DevOps, Dokümantasyon) ile adımlar ve kod.
+
+### 3. Test / çalışabilirlik kontrolü
+- Yazın: **“test-runner çalıştır”** veya **“test-runner’ı çalıştır”**.
+- Cursor, `.cursor/agents/test-runner.md` kurallarına göre build, lint ve script kontrolü yapar.
+
+### 4. .cursorrules’ın etkisi
+- Bu dosya proje kökünde olduğu sürece **her sohbette** Cursor tarafından okunur.
+- Davranış: Proje stack’i (Node, React, MPV, iki kurulum scripti) ve yukarıdaki rol/akış buna göre uygulanır.
+
+### 5. Başka subagent eklemek
+- Yeni bir agent için: `.cursor/agents/yeni-agent.md` oluştur.
+- İçinde `name:` ve `description:` (ne zaman devreye gireceği) tanımla; gövde = o agent’ın talimatları.
+- Kullanım: “yeni-agent kullan” veya “yeni-agent’ı çalıştır” de.
+
+Özet: Günlük kullanımda normal konuş; büyük işlerde plan + roller; çalışabilirlik için “test-runner çalıştır” de.

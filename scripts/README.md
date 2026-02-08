@@ -35,6 +35,12 @@ Son adım: **`sudo reboot`**
 
 ---
 
+## 3. Anthias ekranları (merkezden yönetim)
+
+Pi üzerinde **Anthias** (Screenly OSE) çalışıyorsa bu ekranları merkezden yönetebilirsiniz: Admin sayfasında **Anthias ekranları** bölümünden ekran ekleyin (cihaz adresi örn. `http://192.168.1.8:8000`), sonra kütüphanedeki videoyu o ekranda oynatın. Cihaz listesi `server/data/anthias-devices.json` içinde saklanır.
+
+---
+
 ## Kullanım
 
 1. Sunucuda Admin’i aç: `http://SUNUCU_IP:3000/admin/` → Video yükle (kütüphaneye girer).
@@ -76,3 +82,4 @@ scripts/
 - **Pi’de hâlâ tty/konsol görünüyor:** Kurulumu tekrar çalıştırıp `sudo reboot` yapın. `getty@tty1` script ile kapatılıyor; bazen ilk kurulumda etkisi reboot’tan sonra olur.
 - **Video oynatılmıyor:** Pi’de `sudo systemctl status ariopi-signage`. Config: `/etc/ariopi-signage/config.json` (server_url, player_id). Video formatı: 720p MP4 (H.264) önerilir.
 - **HDMI siyah:** `/boot/config.txt` veya `/boot/firmware/config.txt` içinde `hdmi_force_hotplug=1` ve `gpu_mem=256` olsun (script ekliyor; reboot gerekir).
+- **HDMI'da sadece açılış bilgisi görünüyor:** SSH ile `cat /tmp/ariopi-signage.log` ve `systemctl status ariopi-signage` kontrol edin. Config’te `"mpv_vo": "sdl"` deneyin; servis openvt + kbd ile VT1’de çalışır.

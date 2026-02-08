@@ -1,17 +1,20 @@
 [Unit]
 Description=ArioPi Player (MPV)
-After=local-fs.target
+After=multi-user.target
 
 [Service]
 Type=simple
-User=pi
-Group=video
-# GUI yok; MPV DRM/rpi ile doğrudan HDMI
+# Root: openvt VT degistirebilsin; oynatıcı asil kullanici olarak acilir
+# openvt -s -c 1: VT 1'de calistir ve ekrani VT 1'e gecir (MPV DRM TTY alir)
+User=root
 Environment=DISPLAY=
+Environment=HOME=/home/pi
 WorkingDirectory=/home/pi
-ExecStart=/usr/bin/python3 /opt/ariopi-signage/signage_client.py
+ExecStart=/bin/sh -c 'chvt 1; exec /usr/bin/openvt -c 1 -w -- /usr/bin/sudo -u pi /usr/bin/python3 /opt/ariopi-signage/signage_client.py'
 Restart=always
-RestartSec=10
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

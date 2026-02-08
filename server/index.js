@@ -144,6 +144,135 @@ app.post('/api/signage/stop', (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- Anthias: merkezden yönetilen ekranlar (her biri Pi'de Anthias çalışıyor) ----------
+const ANTHIAS_DATA_FILE = path.join(__dirname, 'data', 'anthias-devices.json');
+const anthiasDevices = new Map(); // id -> { id, name, baseUrl }
+
+function loadAnthiasDevices() {
+  try {
+    const dir = path.dirname(ANTHIAS_DATA_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(ANTHIAS_DATA_FILE)) return;
+    const data = JSON.parse(fs.readFileSync(ANTHIAS_DATA_FILE, 'utf8'));
+    if (Array.isArray(data.devices)) {
+      data.devices.forEach((d) => {
+        if (d.id && d.baseUrl) anthiasDevices.set(d.id, { id: d.id, name: d.name || d.id, baseUrl: d.baseUrl.replace(/\/$/, '') });
+      });
+    }
+  } catch (_) {}
+}
+function saveAnthiasDevices() {
+  try {
+    const dir = path.dirname(ANTHIAS_DATA_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const devices = Array.from(anthiasDevices.values());
+    fs.writeFileSync(ANTHIAS_DATA_FILE, JSON.stringify({ devices }, null, 2), 'utf8');
+  } catch (e) {
+    console.error('[Anthias] save error', e.message);
+  }
+}
+loadAnthiasDevices();
+
+app.get('/api/anthias/devices', (req, res) => {
+  const list = Array.from(anthiasDevices.values());
+  res.json({ devices: list });
+});
+
+app.post('/api/anthias/devices', (req, res) => {
+  const { name, baseUrl } = req.body || {};
+  if (!baseUrl || typeof baseUrl !== 'string') return res.status(400).json({ error: 'baseUrl gerekli' });
+  const url = baseUrl.replace(/\/$/, '');
+  const id = uuidv4();
+  anthiasDevices.set(id, { id, name: (name || url).trim() || id, baseUrl: url });
+  saveAnthiasDevices();
+  res.status(201).json(anthiasDevices.get(id));
+});
+
+app.delete('/api/anthias/devices/:id', (req, res) => {
+  if (!anthiasDevices.has(req.params.id)) return res.status(404).json({ error: 'Cihaz bulunamadı' });
+  anthiasDevices.delete(req.params.id);
+  saveAnthiasDevices();
+  res.json({ ok: true });
+});
+
+app.get('/api/anthias/devices/:id/status', async (req, res) => {
+  const dev = anthiasDevices.get(req.params.id);
+  if (!dev) return res.status(404).json({ error: 'Cihaz bulunamadı' });
+  try {
+    const r = await fetch(`${dev.baseUrl}/api/docs/`, { method: 'GET', signal: AbortSignal.timeout(5000) });
+    res.json({ online: r.ok, status: r.status });
+  } catch (e) {
+    res.json({ online: false, error: e.message });
+  }
+});
+
+// Anthias'ta URL oynat: önce asset ekle (API'ye göre path değişebilir), sonra aktif et
+app.post('/api/anthias/devices/:id/play-url', async (req, res) => {
+  const dev = anthiasDevices.get(req.params.id);
+  if (!dev) return res.status(404).json({ error: 'Cihaz bulunamadı' });
+  const { url } = req.body || {};
+  if (!url) return res.status(400).json({ error: 'url gerekli' });
+  const baseUrl = PUBLIC_URL_FALLBACK || (req.protocol + '://' + req.get('host'));
+  const videoUrl = url.startsWith('http') ? url : `${baseUrl}/api/videos/${url}/file`;
+  try {
+    // Anthias API: asset ekle (source_url veya url — sürüme göre farklı olabilir)
+    const addRes = await fetch(`${dev.baseUrl}/api/assets/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: videoUrl, asset_type: 'webpage' }),
+      signal: AbortSignal.timeout(15000),
+    }).catch(() => null);
+    if (addRes && addRes.ok) {
+      const data = await addRes.json().catch(() => ({}));
+      const assetId = data.id || data.asset_id;
+      if (assetId) {
+        const activateRes = await fetch(`${dev.baseUrl}/api/assets/${assetId}/activate/`, {
+          method: 'POST',
+          signal: AbortSignal.timeout(5000),
+        }).catch(() => null);
+        if (activateRes && activateRes.ok) return res.json({ ok: true, assetId });
+      }
+      return res.json({ ok: true });
+    }
+    // Alternatif: sadece asset ekle (aktif etme endpoint'i farklı olabilir)
+    const altRes = await fetch(`${dev.baseUrl}/api/assets/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_url: videoUrl }),
+      signal: AbortSignal.timeout(15000),
+    }).catch(() => null);
+    if (altRes && altRes.ok) return res.json({ ok: true });
+    const errText = (addRes && (await addRes.text().catch(() => ''))) || (altRes && (await altRes.text().catch(() => ''))) || '';
+    res.status(502).json({ error: 'Anthias API yanıt vermedi. Cihazda /api/docs/ kontrol edin.', detail: errText.slice(0, 200) });
+  } catch (e) {
+    res.status(502).json({ error: e.message || 'Cihaza bağlanılamadı' });
+  }
+});
+
+// Anthias API'ye serbest proxy: POST body { path, method, body }
+app.post('/api/anthias/devices/:id/proxy', express.json(), async (req, res) => {
+  const dev = anthiasDevices.get(req.params.id);
+  if (!dev) return res.status(404).json({ error: 'Cihaz bulunamadı' });
+  const { path: subPath = '', method = 'GET', body: proxyBody } = req.body || {};
+  const targetUrl = `${dev.baseUrl}/api/${String(subPath).replace(/^\//, '')}`;
+  try {
+    const opts = { method: method.toUpperCase(), signal: AbortSignal.timeout(15000) };
+    if (opts.method !== 'GET' && opts.method !== 'HEAD' && proxyBody != null) {
+      opts.headers = { 'Content-Type': 'application/json' };
+      opts.body = JSON.stringify(proxyBody);
+    }
+    const r = await fetch(targetUrl, opts);
+    const text = await r.text();
+    try {
+      res.status(r.status).json(JSON.parse(text));
+    } catch {
+      res.status(r.status).send(text);
+    }
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 const io = new Server(server, {
   cors: { origin: true },
   pingTimeout: 20000,
