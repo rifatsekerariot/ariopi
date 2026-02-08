@@ -94,6 +94,13 @@ sudo systemctl daemon-reload
 sudo reboot
 ```
 
+**Siyah ekran / yanıp sönen imleç (Pi'de görüntü yok):**
+
+1. **HDMI zorla açık:** Pi'de (veya SD kartı başka bilgisayarda açıp) `/boot/config.txt` veya `/boot/firmware/config.txt` dosyasına şu satırı ekleyin (yoksa): `hdmi_force_hotplug=1` — Kaydedip Pi'yi yeniden başlatın.
+2. **Açılışta ağı bekle:** `sudo raspi-config` → Boot → **Wait for network at boot** açın.
+3. **Chromium'dan önce bekleme:** Kurulum scripti Openbox'ta `sleep 8` ve `xset s off` kullanıyor. Hâlâ siyah kalıyorsa `~/.config/openbox/autostart` içinde `sleep 8` değerini 15–20 yapıp deneyin.
+4. **X çalışıyor mu?** Yanıp sönen imleç bazen konsol (tty) demektir. SSH veya Ctrl+Alt+F2 ile giriş yapıp `startx` yazın. Hata alırsanız `/boot/config.txt` içinde `#dtoverlay=vc4-kms-v3d` satırını yorum satırı yapıp reboot deneyin.
+
 ---
 
 ## Sıralı kurulum özeti
