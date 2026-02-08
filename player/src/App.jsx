@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
-import SimplePeer from 'simple-peer';
+import * as db from './db';
 
 const PLAYER_ID_KEY = 'digitalsignage_player_id';
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || (import.meta.env.DEV ? 'http://localhost:3000' : window.location.origin);
@@ -16,107 +16,158 @@ function getOrCreatePlayerId() {
 
 export default function App() {
   const [connected, setConnected] = useState(false);
-  const [stream, setStream] = useState(null);
+  const [currentVideoId, setCurrentVideoId] = useState(null);
+  const [storedVideoIds, setStoredVideoIds] = useState([]);
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState(null);
   const [playerId] = useState(getOrCreatePlayerId);
   const videoRef = useRef(null);
   const socketRef = useRef(null);
-  const peerRef = useRef(null);
+  const objectUrlRef = useRef(null);
+  const currentVideoIdRef = useRef(null);
+  currentVideoIdRef.current = currentVideoId;
+
+  const reportStoredVideos = (socket, ids) => {
+    if (socket) socket.emit('stored_videos', { videoIds: ids });
+  };
 
   useEffect(() => {
     const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'], reconnection: true });
     socketRef.current = socket;
 
-    socket.on('connect', () => {
+    socket.on('connect', async () => {
       setConnected(true);
-      socket.emit('join-room', { room: 'player', playerId });
+      setError(null);
+      const ids = await db.getStoredVideoIds();
+      setStoredVideoIds(ids);
+      socket.emit('join-room', { room: 'player', playerId, storedVideos: ids });
     });
 
     socket.on('joined', () => setConnected(true));
     socket.on('disconnect', () => setConnected(false));
 
-    socket.on('incoming-call', ({ from, signal }) => {
-      const callerSocketId = from;
-      if (peerRef.current) {
-        try { peerRef.current.destroy(); } catch (_) {}
-        peerRef.current = null;
-      }
-      setStream(null);
-
-      const peer = new SimplePeer({ initiator: false, trickle: true });
-      peerRef.current = peer;
-      let firstSignal = true;
-
-      peer.on('signal', (data) => {
-        if (firstSignal) {
-          firstSignal = false;
-          socket.emit('answer-call', { to: callerSocketId, signal: data });
-        } else {
-          socket.emit('ice-candidate', { to: callerSocketId, candidate: data });
-        }
-      });
-
-      peer.on('stream', (remoteStream) => {
-        setStream(remoteStream);
-      });
-
-      peer.on('close', () => {
-        peerRef.current = null;
-        setStream(null);
-      });
-      peer.on('error', () => {
-        peerRef.current = null;
-        setStream(null);
-      });
-
-      socket.on('ice-candidate', ({ from: fromSocket, candidate }) => {
-        if (fromSocket === from && candidate) peer.signal(candidate);
-      });
-      const offIce = () => socket.off('ice-candidate');
-      peer.once('close', offIce);
-      peer.once('error', offIce);
-
+    socket.on('download_and_store', async ({ videoId, name, downloadUrl }) => {
+      setDownloading(true);
+      setError(null);
       try {
-        peer.signal(signal);
+        const res = await fetch(downloadUrl);
+        if (!res.ok) throw new Error('İndirme hatası');
+        const blob = await res.blob();
+        await db.putVideo(videoId, name, blob);
+        const ids = await db.getStoredVideoIds();
+        setStoredVideoIds(ids);
+        reportStoredVideos(socket, ids);
       } catch (e) {
-        setStream(null);
-        peerRef.current = null;
+        setError(e.message || 'Video kaydedilemedi');
+      } finally {
+        setDownloading(false);
       }
     });
 
-    return () => {
-      peerRef.current?.destroy();
-      socket.disconnect();
-    };
+    socket.on('play_video', async ({ videoId }) => {
+      setError(null);
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
+      const video = videoRef.current;
+      if (!video) return;
+      try {
+        const blob = await db.getVideo(videoId);
+        if (!blob) {
+          setError('Video cihazda bulunamadı');
+          return;
+        }
+        const url = URL.createObjectURL(blob);
+        objectUrlRef.current = url;
+        video.src = url;
+        video.muted = true;
+        video.playsInline = true;
+        video.load();
+        await video.play();
+        setCurrentVideoId(videoId);
+        currentVideoIdRef.current = videoId;
+        socket.emit('player_status', { status: 'playing' });
+      } catch (e) {
+        setError(e.message || 'Oynatılamadı');
+        setCurrentVideoId(null);
+      }
+    });
+
+    socket.on('stop', () => {
+      const video = videoRef.current;
+      if (video) {
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+      }
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
+      setCurrentVideoId(null);
+      currentVideoIdRef.current = null;
+      socket.emit('player_status', { status: 'stopped' });
+    });
+
+    socket.on('delete_video', async ({ videoId }) => {
+      try {
+        await db.deleteVideo(videoId);
+        const ids = await db.getStoredVideoIds();
+        setStoredVideoIds(ids);
+        reportStoredVideos(socket, ids);
+        if (currentVideoIdRef.current === videoId) {
+          const v = videoRef.current;
+          if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
+          if (objectUrlRef.current) {
+            URL.revokeObjectURL(objectUrlRef.current);
+            objectUrlRef.current = null;
+          }
+          setCurrentVideoId(null);
+          currentVideoIdRef.current = null;
+          socket.emit('player_status', { status: 'stopped' });
+        }
+      } catch (_) {}
+    });
+
+    return () => socket.disconnect();
   }, [playerId]);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    if (stream) {
-      video.srcObject = stream;
-      video.muted = true;
-      video.playsInline = true;
-      video.play().catch(() => {});
-    } else {
-      video.srcObject = null;
-    }
-  }, [stream]);
+    const onEnded = () => {
+      setCurrentVideoId(null);
+      socketRef.current?.emit('player_status', { status: 'stopped' });
+    };
+    video.addEventListener('ended', onEnded);
+    return () => video.removeEventListener('ended', onEnded);
+  }, []);
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-slate-950">
-      {!stream ? (
-        <div className="text-center text-slate-500">
-          <p className="text-lg font-medium">Waiting for content…</p>
-          <p className="mt-1 text-sm">Player ID: {playerId}</p>
-          <p className="mt-2 text-xs">{connected ? 'Connected' : 'Connecting…'}</p>
+      {error && (
+        <div className="absolute top-2 left-2 right-2 rounded bg-amber-900/80 px-3 py-2 text-sm text-amber-200">
+          {error}
         </div>
-      ) : null}
+      )}
+      {downloading && (
+        <div className="absolute top-2 right-2 rounded bg-sky-900/80 px-3 py-2 text-sm text-sky-200">
+          Video indiriliyor…
+        </div>
+      )}
+      {!currentVideoId && (
+        <div className="text-center text-slate-500">
+          <p className="text-lg font-medium">İç bekleniyor</p>
+          <p className="mt-1 text-sm">Cihaz: {playerId}</p>
+          <p className="mt-2 text-xs">{connected ? 'Bağlı' : 'Bağlanıyor…'}</p>
+        </div>
+      )}
       <video
         ref={videoRef}
-        autoPlay
         muted
         playsInline
-        className={`absolute inset-0 h-full w-full object-contain ${stream ? 'block' : 'hidden'}`}
+        className={`absolute inset-0 h-full w-full object-contain ${currentVideoId ? 'block' : 'hidden'}`}
         style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
       />
     </div>

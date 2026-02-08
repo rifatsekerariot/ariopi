@@ -1,44 +1,39 @@
 # ArioPi — Digital Signage
 
-WebRTC ve Socket.io ile **webcam’i veya video dosyasını** Raspberry Pi’ye (TV’ye bağlı) canlı yayınlayan basit, sorunsuz bir dijital tabela sistemi.
+Sunucu merkezli **dijital tabela** sistemi: videoları yönetir, cihazlara gönderir; cihazda **yerel** depolama ve oynatma (canlı yayın yok).
+
+## Özellikler
+
+- **Video kütüphanesi:** Bilgisayardan video yükle, sunucuda listele, sunucudan sil.
+- **Cihaza gönder:** Seçili videoyu seçili oynatıcıya gönder; cihaz indirip **kendi hafızasında** (IndexedDB) saklar.
+- **Oynat / Durdur / Sil:** Sunucudan tek tıkla cihazda oynat, durdur veya cihazdaki videoyu sil.
+- **Minimum signage ihtiyaçları:** Yönetim paneli, cihaz listesi, içerik atama, uzaktan oynat/durdur/sil.
 
 ## Mimari
 
 | Bileşen | Açıklama |
 |--------|----------|
-| **Server** | Node.js + Express + Socket.io (WebRTC sinyalleme) |
-| **Admin** | React + Vite — Hangi Pi’ye yayın yapılacağını seçer, “Start Stream” ile webcam’i açar |
-| **Player** | React + Vite — Pi’de/TV’de çalışır; gelen yayını tam ekran gösterir |
+| **Server** | Node.js + Express + Socket.io — Video yükleme API’si, kütüphane, cihaza gönderme ve komut iletimi |
+| **Admin** | React + Vite — Video yükle, kütüphaneden cihaza gönder, cihazda oynat/durdur/sil |
+| **Player** | React + Vite — Cihazda (Pi/TV) çalışır; videoları yerel depoda tutar, sunucudan gelen komutlarla oynatır/durdurur/siler |
 
 ## Teknolojiler
 
 - **Runtime:** Node.js  
 - **Frontend:** React, Tailwind CSS, Vite  
-- **İletişim:** Socket.io (oda/sinyal), simple-peer (WebRTC)
+- **İletişim:** Socket.io  
+- **Cihaz depolama:** Tarayıcı IndexedDB (kalıcı, cihaza özel)
 
 ## Proje yapısı
 
 ```
 ariopi/
-├── server/           # Sinyal sunucusu (join-room, call-user, answer-call, ice-candidate)
-├── admin/            # Yönetim paneli (cihaz listesi, Start Stream)
-├── player/           # Pi/TV oynatıcı (otomatik bağlanma, tam ekran video)
-├── scripts/          # Kurulum scriptleri (sunucu + Pi, interaktif)
-│   ├── README.md     # Script kullanımı
-│   ├── server/       # Sunucu kurulumu (Node, build, .env, systemd)
-│   └── pi/           # Raspberry Pi kiosk kurulumu
-├── setup-kiosk.sh    # (Eski) Tek dosya kiosk — tercihen scripts/pi/setup.sh kullanın
+├── server/           # API (video upload/list/file/delete) + Socket.io (komutlar)
+├── admin/            # Yönetim paneli (kütüphane, cihazlar, gönder/oynat/durdur/sil)
+├── player/           # Cihaz oynatıcı (IndexedDB, oynat/durdur/sil)
+├── scripts/          # Kurulum scriptleri (sunucu + Pi)
 └── README.md
 ```
-
-### Kurulum scriptleri (hazır kurulum)
-
-Sunucu ve Raspberry Pi’yi **interaktif** hazır hale getirmek için:
-
-- **Sunucu:** `sudo bash scripts/server/setup.sh` — IP, port sorulur; Node, build ve isteğe bağlı systemd kurulur.
-- **Pi:** `sudo bash scripts/pi/setup.sh` — Sunucu IP ve port sorulur; kiosk (Chromium + Openbox) kurulur.
-
-Ayrıntılar: [scripts/README.md](scripts/README.md)
 
 ## Çalıştırma
 
@@ -60,11 +55,9 @@ npm install
 npm run dev
 ```
 
-Tarayıcıda `http://localhost:5173` açın. Bağlı oynatıcıları görüp birini seçin ve **Start Stream** ile webcam’i o Pi’ye gönderin.
+Tarayıcıda `http://localhost:5173` — Video yükle, cihaz seç, “Cihaza gönder” / “Oynat” / “Durdur” / “Sil”.
 
 ### 3. Oynatıcı (Player)
-
-**Geliştirme (aynı makine):**
 
 ```bash
 cd player
@@ -72,52 +65,30 @@ npm install
 npm run dev
 ```
 
-`http://localhost:5174` — Admin’den bu adrese yayın hedeflenebilir (aynı ağda ise IP:5174 kullanın).
+`http://localhost:5174` — Cihaz burada kayıt olur; sunucudan gelen videolar yerelde saklanır ve komutlarla oynatılır/durdurulur/silinir.
 
-**Production (Pi’de göstermek için):** Player’ı build edip bir web sunucusunda yayınlayın; Pi’de bu URL’yi açın veya kiosk script’inde kullanın.
+## Akış
 
-```bash
-cd player
-npm run build
-# dist/ çıktısını nginx, Express static vb. ile servis edin
-```
+1. Admin video yükler → sunucu `uploads/` ve kütüphaneye ekler.  
+2. Admin bir cihaz seçer, kütüphaneden “Cihaza gönder” der → sunucu cihaza “şu URL’den indir ve sakla” komutunu iletir → cihaz indirip IndexedDB’ye yazar.  
+3. Admin “Oynat” der → sunucu cihaza “şu videoyu oynat” iletir → cihaz yerel depodan oynatır.  
+4. Admin “Durdur” veya “Sil” der → cihaz durdurur veya yerel dosyayı siler.
 
-## Raspberry Pi kiosk kurulumu (Pi OS Lite)
+## Kurulum scriptleri
 
-Pi’de tarayıcıyı tam ekran kiosk modunda, Player URL’sine yönlendirmek için:
+- **Sunucu:** `sudo bash scripts/server/setup.sh` — Node, build, systemd.  
+- **Pi:** `sudo bash scripts/pi/setup.sh` — Kiosk (Chromium + Openbox), systemd.  
 
-1. Player uygulamasının erişilebilir URL’sini belirleyin (örn. `http://SUNUCU_IP:5174` veya sunucunuzda servis ettiğiniz player build’i).
-
-2. Script’i indirip çalıştırın:
-
-```bash
-export PLAYER_URL=http://SUNUCU_IP:5174
-sudo -E bash setup-kiosk.sh
-```
-
-3. Pi’yi yeniden başlatın. Konsol girişinde (tty1) otomatik olarak X + Openbox + Chromium kiosk açılır; imleç gizlenir (unclutter).
-
-**Kurulanlar:** xorg, openbox, chromium-browser, unclutter.
-
-## Sinyal akışı (WebRTC)
-
-1. Player bağlanır → `join-room` (`room: 'player'`, `playerId`) → sunucu listeyi admin’e gönderir.  
-2. Admin “Start Stream” → `getUserMedia` → simple-peer (initiator) → ilk sinyal `call-user` ile player’a iletilir.  
-3. Player `incoming-call` alır → cevap üretir → `answer-call` ile admin’e gönderir.  
-4. ICE adayları `ice-candidate` ile iki yönlü iletilir.  
-5. Bağlantı kurulunca video Player’da tam ekran (muted, playsInline) oynar.
+Ayrıntılar: [scripts/README.md](scripts/README.md)
 
 ## Ortam değişkenleri
 
 | Değişken | Bileşen | Açıklama |
 |----------|---------|----------|
 | `PORT` | server | Sunucu portu (varsayılan: 3000) |
-| `VITE_SOCKET_URL` | admin, player | Socket.io sunucu adresi (örn. `http://192.168.1.10:3000`) |
-| `PLAYER_URL` | setup-kiosk.sh | Kiosk’ta açılacak Player sayfası URL’si |
-
-## Lisans
-
-MIT.
+| `BIND` | server | Dinlenecek adres (varsayılan: 0.0.0.0) |
+| `VITE_SOCKET_URL` | admin, player | Sunucu adresi (örn. `http://192.168.1.10:3000`) |
+| `PLAYER_URL` | setup-kiosk.sh | Kiosk’ta açılacak Player URL’si |
 
 ---
 
