@@ -3,16 +3,29 @@
  * Events: join-room, call-user, answer-call, ice-candidate
  */
 
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
+const path = require('path');
+const fs = require('fs');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
+const BIND = process.env.BIND || '0.0.0.0';
+const PUBLIC_DIR = path.join(__dirname, 'public');
 
 app.use(cors({ origin: true }));
+
+// Production: serve built admin and player from /admin and /player
+if (fs.existsSync(path.join(PUBLIC_DIR, 'admin'))) {
+  app.use('/admin', express.static(path.join(PUBLIC_DIR, 'admin')));
+}
+if (fs.existsSync(path.join(PUBLIC_DIR, 'player'))) {
+  app.use('/player', express.static(path.join(PUBLIC_DIR, 'player')));
+}
 
 const io = new Server(server, {
   cors: { origin: true },
@@ -88,6 +101,6 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`[Server] Signaling server at http://localhost:${PORT}`);
+server.listen(Number(PORT), BIND, () => {
+  console.log(`[Server] Signaling server at http://${BIND}:${PORT}`);
 });

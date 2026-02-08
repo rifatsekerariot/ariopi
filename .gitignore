@@ -4,6 +4,8 @@ node_modules/
 # Build outputs
 dist/
 build/
+server/public/admin/
+server/public/player/
 *.local
 
 # Env

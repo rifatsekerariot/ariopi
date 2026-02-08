@@ -23,9 +23,22 @@ ariopi/
 ├── server/           # Sinyal sunucusu (join-room, call-user, answer-call, ice-candidate)
 ├── admin/            # Yönetim paneli (cihaz listesi, Start Stream)
 ├── player/           # Pi/TV oynatıcı (otomatik bağlanma, tam ekran video)
-├── setup-kiosk.sh    # Raspberry Pi OS Lite için kiosk kurulumu
+├── scripts/          # Kurulum scriptleri (sunucu + Pi, interaktif)
+│   ├── README.md     # Script kullanımı
+│   ├── server/       # Sunucu kurulumu (Node, build, .env, systemd)
+│   └── pi/           # Raspberry Pi kiosk kurulumu
+├── setup-kiosk.sh    # (Eski) Tek dosya kiosk — tercihen scripts/pi/setup.sh kullanın
 └── README.md
 ```
+
+### Kurulum scriptleri (hazır kurulum)
+
+Sunucu ve Raspberry Pi’yi **interaktif** hazır hale getirmek için:
+
+- **Sunucu:** `sudo bash scripts/server/setup.sh` — IP, port sorulur; Node, build ve isteğe bağlı systemd kurulur.
+- **Pi:** `sudo bash scripts/pi/setup.sh` — Sunucu IP ve port sorulur; kiosk (Chromium + Openbox) kurulur.
+
+Ayrıntılar: [scripts/README.md](scripts/README.md)
 
 ## Çalıştırma
 
