@@ -60,8 +60,8 @@ Kurulumdan sonra servis otomatik başlar ve her açılışta çalışır.
 1. Paket listesini günceller.
 2. Xorg, Openbox, Chromium (veya chromium-browser), unclutter kurar.
 3. Openbox autostart’a kiosk komutunu yazar (Player URL scriptte sorulur).
-4. **systemd servisi `ariopi-kiosk`** kurulur: xinit ile X + Openbox + Chromium kiosk; açılışta otomatik başlar.
-5. Tty1 otomatik giriş (konsol erişimi için).
+4. **tty1 autologin + .profile ile startx:** Açılışta tty1'de kullanıcı otomatik giriş yapar, startx ile X ve kiosk başlar (HDMI'da görünür).
+5. Konsol erişimi: tty2 (Ctrl+Alt+F2).
 
 **İnteraktif sorular:**
 
@@ -78,17 +78,19 @@ Player URL otomatik: `http://SUNUCU_IP:PORT/player/`
 sudo bash scripts/pi/setup.sh
 ```
 
-Kurulumdan sonra Pi’yi yeniden başlatın; kiosk systemd ile açılışta başlar.
+Kurulumdan sonra Pi’yi yeniden başlatın; tty1'de autologin ve startx ile kiosk açılır. Konsol: Ctrl+Alt+F2.
 
-- **systemd:** `sudo systemctl status ariopi-kiosk` | `start` | `stop` | `restart`
 - `sudo reboot`
 
-**Açılışta konsol görünüyorsa (HDMI'da kiosk yok):** Eski kurulumda kiosk vt7'de başlıyordu. Pi'de şunu çalıştırın (kiosk vt1'de, yani HDMI'da açılsın):
+**Hâlâ konsol görünüyorsa (ariopi-kiosk hata veriyorsa):** Pi'de ariopi-kiosk'u kapatıp autologin + startx kullanın. Kullanıcı adı ariot değilse aşağıdaki ariot'u değiştirin:
 ```bash
-sudo systemctl mask getty@tty1.service
-sudo sed -i 's/ vt7$/ vt1/' /etc/systemd/system/ariopi-kiosk.service
+sudo systemctl stop ariopi-kiosk 2>/dev/null
+sudo systemctl disable ariopi-kiosk 2>/dev/null
+sudo systemctl unmask getty@tty1.service 2>/dev/null
+sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
+printf '[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin ariot --noclear %%I $TERM\n' | sudo tee /etc/systemd/system/getty@tty1.service.d/autologin.conf
+echo 'if [ -z "$DISPLAY" ] && [ "$(tty)" = /dev/tty1 ]; then exec startx; fi' | sudo tee -a /home/ariot/.profile
 sudo systemctl daemon-reload
-sudo systemctl restart ariopi-kiosk
 sudo reboot
 ```
 
