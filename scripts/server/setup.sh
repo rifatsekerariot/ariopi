@@ -36,19 +36,30 @@ echo "  Eski node_modules ve public build çıktıları temizlendi."
 echo ""
 
 # --- İnteraktif bilgiler ---
-read -p "Sunucu IP adresi (bu makinenin IP'si, örn. 192.168.1.10): " SERVER_IP
+echo "Sunucu adresi: Admin ve Player buradan bağlanır. Bulutta ise genel IP veya domain girin (örn. 188.132.211.90)."
+read -p "Sunucu IP veya domain (bulut: 188.132.211.90 gibi): " SERVER_IP
 SERVER_IP="${SERVER_IP:-0.0.0.0}"
 
 read -p "Port (varsayılan 3000): " PORT
 PORT="${PORT:-3000}"
 
-read -p "Bind adresi (varsayılan 0.0.0.0 - tüm ağ): " BIND
+read -p "Bind adresi (varsayılan 0.0.0.0 - tüm ağ / bulut): " BIND
 BIND="${BIND:-0.0.0.0}"
 
-# Socket URL (admin/player buradan bağlanacak)
-if [ "$SERVER_IP" = "0.0.0.0" ]; then
-  SOCKET_URL="http://localhost:${PORT}"
-  echo "Not: SERVER_IP 0.0.0.0 girildi; build için localhost kullanılıyor. Production'da sunucunun gerçek IP'sini girin."
+# Socket URL (admin/player buradan bağlanacak; Pi internetten bu adrese erişmeli)
+if [ "$SERVER_IP" = "0.0.0.0" ] || [ -z "$SERVER_IP" ]; then
+  DETECTED_PUBLIC=""
+  if command -v curl &>/dev/null; then
+    DETECTED_PUBLIC=$(curl -s --max-time 3 https://ifconfig.me/ip 2>/dev/null || curl -s --max-time 3 https://api.ipify.org 2>/dev/null || true)
+  fi
+  if [ -n "$DETECTED_PUBLIC" ]; then
+    SERVER_IP="$DETECTED_PUBLIC"
+    SOCKET_URL="http://${SERVER_IP}:${PORT}"
+    echo "  Otomatik algılanan genel IP: $SERVER_IP → Socket URL: $SOCKET_URL"
+  else
+    SOCKET_URL="http://localhost:${PORT}"
+    echo "Uyarı: SERVER_IP boş/0.0.0.0 ve genel IP algılanamadı. Build localhost kullanacak; bulutta çalışmaz. Sunucu IP'sini elle girin."
+  fi
 else
   SOCKET_URL="http://${SERVER_IP}:${PORT}"
 fi
@@ -114,10 +125,12 @@ echo "  /player -> server/public/player"
 # --- .env oluştur ---
 echo ""
 echo "[6/8] server/.env oluşturuluyor..."
+# Reverse proxy / bulut: indirme URL'leri farklı domain ise server/.env içine PUBLIC_URL=http://188.132.211.90:3000 ekleyin
 cat > "$PROJECT_ROOT/server/.env" << EOF
 # ArioPi Server — Bu dosya setup.sh tarafından oluşturuldu
 PORT=$PORT
 BIND=$BIND
+# İndirme adresleri farklı bir adresten verilecekse (reverse proxy): PUBLIC_URL=http://domain:port
 EOF
 echo "  PORT=$PORT"
 echo "  BIND=$BIND"
@@ -158,10 +171,9 @@ echo "=============================================="
 echo "systemd: sudo systemctl status ariopi-server | start | stop | restart"
 echo ""
 echo "Erişim adresleri:"
-echo "  Admin:  http://localhost:${PORT}/admin/"
-echo "  Player: http://localhost:${PORT}/player/"
+echo "  Yerel:  Admin http://localhost:${PORT}/admin/  Player http://localhost:${PORT}/player/"
 if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "0.0.0.0" ]; then
-  echo "  Ağ: Admin  http://${SERVER_IP}:${PORT}/admin/"
-  echo "  Ağ: Player http://${SERVER_IP}:${PORT}/player/"
+  echo "  Ağ/Bulut: Admin http://${SERVER_IP}:${PORT}/admin/  Player http://${SERVER_IP}:${PORT}/player/"
+  echo "  (Pi bu Player URL'sini açar; sunucu buluttaysa Pi herhangi bir ağdan internet üzerinden bağlanır.)"
 fi
 echo ""

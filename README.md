@@ -86,9 +86,12 @@ Ayrıntılar: [scripts/README.md](scripts/README.md)
 | Değişken | Bileşen | Açıklama |
 |----------|---------|----------|
 | `PORT` | server | Sunucu portu (varsayılan: 3000) |
-| `BIND` | server | Dinlenecek adres (varsayılan: 0.0.0.0) |
-| `VITE_SOCKET_URL` | admin, player | Sunucu adresi (örn. `http://192.168.1.10:3000`) |
-| `PLAYER_URL` | setup-kiosk.sh | Kiosk’ta açılacak Player URL’si |
+| `BIND` | server | Dinlenecek adres (varsayılan: 0.0.0.0; bulutta aynen) |
+| `PUBLIC_URL` | server | İsteğe bağlı; reverse proxy için indirme adresi (örn. `http://188.132.211.90:3000`) |
+| `VITE_SOCKET_URL` | admin, player | Build'de sunucu adresi; bulutta genel IP (örn. `http://188.132.211.90:3000`) |
+| Player URL | Pi setup | Kiosk'ta açılacak: http://SUNUCU_IP:PORT/player/ (bulutta sunucu genel IP'si) |
+
+**Bulut:** Sunucu bulutta (örn. 188.132.211.90), Pi farklı ağda ise her iki kurulumda da bu IP'yi girin; bağlantı internet üzerinden çalışır.
 
 ---
 

@@ -34,7 +34,9 @@ scripts/
 |------|----------|------------|
 | Sunucu IP adresi | Bu makinenin ağdaki IP’si (build’de socket URL) | 0.0.0.0 |
 | Port | Sunucu portu | 3000 |
-| Bind adresi | Dinlenecek adres | 0.0.0.0 |
+| Bind adresi | Dinlenecek adres (bulutta 0.0.0.0) | 0.0.0.0 |
+
+**Bulut:** Sunucu bulutta (örn. 188.132.211.90) ise kurulumda bu IP'yi girin. Pi herhangi bir ağda olabilir; Player `http://SUNUCU_IP:PORT/player/` ile sunucuya internet üzerinden bağlanır.
 
 **Kullanım:**
 

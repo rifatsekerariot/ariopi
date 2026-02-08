@@ -134,7 +134,11 @@ function notifyAdminsPlayerList() {
   io.to(ADMIN_ROOM).emit('player-list', getPlayerList());
 }
 
+// Bulut / reverse proxy: PUBLIC_URL verilirse indirme adresleri hep buradan üretilir (Pi internetten erişebilsin)
+const PUBLIC_URL = process.env.PUBLIC_URL ? process.env.PUBLIC_URL.replace(/\/$/, '') : null;
+
 function getBaseUrl(socket) {
+  if (PUBLIC_URL) return PUBLIC_URL;
   const req = socket.request;
   const proto = req.headers['x-forwarded-proto'] || 'http';
   const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:' + PORT;
