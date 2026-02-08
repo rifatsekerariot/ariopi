@@ -32,7 +32,7 @@ fi
 
 # --- Eski kurulum temizliği ---
 echo ""
-echo "[0/7] Eski kurulum temizleniyor..."
+echo "[0/8] Eski kurulum temizleniyor..."
 for svc in ariopi-kiosk ariopi-signage; do
   if systemctl is-active --quiet "$svc" 2>/dev/null; then systemctl stop "$svc"; fi
   if systemctl is-enabled --quiet "$svc" 2>/dev/null; then systemctl disable "$svc"; fi
@@ -45,24 +45,36 @@ done
 systemctl daemon-reload 2>/dev/null || true
 echo "  Tamamlandi."
 
+# --- cloud-init devre disi (boot'ta "Reached target cloud-init.target" takilmasini onler) ---
+echo ""
+echo "[1/8] cloud-init devre disi birakiliyor..."
+if [ -d /etc/cloud ]; then
+  touch /etc/cloud/cloud-init.disabled 2>/dev/null && echo "  /etc/cloud/cloud-init.disabled olusturuldu." || true
+fi
+systemctl disable cloud-init 2>/dev/null || true
+systemctl disable cloud-init-local 2>/dev/null || true
+systemctl disable cloud-config 2>/dev/null || true
+systemctl disable cloud-final 2>/dev/null || true
+echo "  Tamamlandi."
+
 # --- Paketler ---
 echo ""
-echo "[1/7] Paketler guncelleniyor..."
+echo "[2/8] Paketler guncelleniyor..."
 apt-get update -qq
 echo ""
-echo "[2/7] mpv ve python3 kuruluyor..."
+echo "[3/8] mpv ve python3 kuruluyor..."
 apt-get install -y --no-install-recommends mpv python3
 
 # --- Oynatıcı dosyaları ---
 echo ""
-echo "[3/7] Oynatıcı kopyalaniyor..."
+echo "[4/8] Oynatıcı kopyalaniyor..."
 mkdir -p "$INSTALL_DIR"
 cp "$LITE_DIR/signage_client.py" "$INSTALL_DIR/"
 chmod +x "$INSTALL_DIR/signage_client.py"
 
 # --- Config ---
 echo ""
-echo "[4/7] Config yaziliyor..."
+echo "[5/8] Config yaziliyor..."
 mkdir -p "$CONFIG_DIR"
 cat > "$CONFIG_DIR/config.json" << EOF
 {
@@ -76,7 +88,7 @@ chmod 644 "$CONFIG_DIR/config.json"
 
 # --- systemd servisi (açılışta oynatıcı) ---
 echo ""
-echo "[5/7] Servis kuruluyor (acilista oynatıcı baslar)..."
+echo "[6/8] Servis kuruluyor (acilista oynatıcı baslar)..."
 sed "s/User=pi/User=$USER/" "$LITE_DIR/ariopi-signage.service" | \
   sed "s|/home/pi|/home/$USER|g" > /etc/systemd/system/ariopi-signage.service
 systemctl daemon-reload
@@ -85,7 +97,7 @@ systemctl start ariopi-signage 2>/dev/null || true
 
 # --- Konsolu HDMI'dan kaldır (tty ekranı görünmesin) ---
 echo ""
-echo "[6/7] Konsol HDMI'dan kaldiriliyor (sadece oynatıcı ekrani gorunur)..."
+echo "[7/8] Konsol HDMI'dan kaldiriliyor (sadece oynatıcı ekrani gorunur)..."
 systemctl disable getty@tty1.service 2>/dev/null || true
 # Alternatif: konsolu tty2'ye tasi (SSH/klavye ile tty2'de giris yapilabilir)
 if [ -f /boot/cmdline.txt ]; then
@@ -97,7 +109,7 @@ echo "  getty@tty1 kapatildi."
 
 # --- GPU / HDMI ---
 echo ""
-echo "[7/7] GPU ve ozet..."
+echo "[8/8] GPU ve ozet..."
 for BOOT_CONF in /boot/config.txt /boot/firmware/config.txt; do
   [ -f "$BOOT_CONF" ] || continue
   grep -q '^hdmi_force_hotplug=1' "$BOOT_CONF" 2>/dev/null || echo "hdmi_force_hotplug=1" >> "$BOOT_CONF"

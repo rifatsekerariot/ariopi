@@ -72,6 +72,7 @@ scripts/
 
 ## Sorun giderme
 
+- **Pi açılışta "Reached target cloud-init.target" yazısında takılı kalıyor:** Kurulum scripti artık cloud-init’i devre dışı bırakıyor; kurulumu tekrar çalıştırıp `sudo reboot` yapın. Zaten takılıysa: SD kartı başka bilgisayarda açıp `/etc/cloud/cloud-init.disabled` boş dosyası oluşturun veya `sudo systemctl disable cloud-init` (Pi’ye SSH ile bağlanabiliyorsanız).
 - **Pi’de hâlâ tty/konsol görünüyor:** Kurulumu tekrar çalıştırıp `sudo reboot` yapın. `getty@tty1` script ile kapatılıyor; bazen ilk kurulumda etkisi reboot’tan sonra olur.
 - **Video oynatılmıyor:** Pi’de `sudo systemctl status ariopi-signage`. Config: `/etc/ariopi-signage/config.json` (server_url, player_id). Video formatı: 720p MP4 (H.264) önerilir.
 - **HDMI siyah:** `/boot/config.txt` veya `/boot/firmware/config.txt` içinde `hdmi_force_hotplug=1` ve `gpu_mem=256` olsun (script ekliyor; reboot gerekir).
