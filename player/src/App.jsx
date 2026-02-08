@@ -17,6 +17,7 @@ function getOrCreatePlayerId() {
 
 export default function App() {
   const [connected, setConnected] = useState(false);
+  const [registered, setRegistered] = useState(false); // Sunucuya kayıt tamam (joined)
   const [currentVideoId, setCurrentVideoId] = useState(null);
   const [storedVideoIds, setStoredVideoIds] = useState([]);
   const [downloading, setDownloading] = useState(false);
@@ -39,18 +40,25 @@ export default function App() {
     socket.on('connect', async () => {
       setConnected(true);
       setError(null);
+      setRegistered(false);
       const ids = await db.getStoredVideoIds();
       setStoredVideoIds(ids);
       socket.emit('join-room', { room: 'player', playerId, storedVideos: ids });
-      // Pi/kiosk: açılışta son oynatılan videoyu otomatik başlat (Chromium hazır olsun diye kısa gecikme)
+      // Pi/kiosk: sunucuya kayıt sonrası son videoyu otomatik başlat
       const lastId = localStorage.getItem(LAST_VIDEO_KEY);
       if (lastId && ids.includes(lastId)) {
         setTimeout(() => playVideoById(lastId), 1500);
       }
     });
 
-    socket.on('joined', () => setConnected(true));
-    socket.on('disconnect', () => setConnected(false));
+    socket.on('joined', () => {
+      setConnected(true);
+      setRegistered(true);
+    });
+    socket.on('disconnect', () => {
+      setConnected(false);
+      setRegistered(false);
+    });
 
     socket.on('download_and_store', async ({ videoId, name, downloadUrl }) => {
       setDownloading(true);
@@ -175,9 +183,13 @@ export default function App() {
       )}
       {!currentVideoId && (
         <div className="text-center text-slate-500">
-          <p className="text-lg font-medium">İç bekleniyor</p>
+          <p className="text-lg font-medium">
+            {!connected && 'Sunucuya bağlanıyor…'}
+            {connected && !registered && 'Sunucuya kaydediliyor…'}
+            {registered && 'Cihaz kaydedildi. İç bekleniyor'}
+          </p>
           <p className="mt-1 text-sm">Cihaz: {playerId}</p>
-          <p className="mt-2 text-xs">{connected ? 'Bağlı' : 'Bağlanıyor…'}</p>
+          <p className="mt-2 text-xs">{registered ? "Hazır — Admin'den video gönderip oynatabilirsiniz" : (connected ? 'Kayıt yapılıyor' : 'Bağlanıyor…')}</p>
         </div>
       )}
       <video

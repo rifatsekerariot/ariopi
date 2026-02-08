@@ -8,9 +8,13 @@ Bu klasör sunucu ve Raspberry Pi için **interaktif kurulum scriptleri** içeri
 scripts/
 ├── README.md           # Bu dosya
 ├── server/
-│   └── setup.sh        # Sunucu: eski servis + build temizliği, sonra kurulum
-└── pi/
-    └── setup.sh        # Pi: eski kiosk servisi temizliği, sonra kurulum
+│   └── setup.sh        # Sunucu: Node, build, systemd
+├── pi/
+│   ├── setup.sh        # Pi: Xorg + Chromium kiosk (web player)
+│   ├── setup-lite.sh   # Pi Lite: GUI yok, MPV + Python (dijital tabela)
+│   └── lite/
+│       ├── signage_client.py      # Poll + MPV oynatıcı
+│       └── ariopi-signage.service # systemd birimi
 ```
 
 ---
@@ -74,6 +78,8 @@ Kurulumdan sonra servis otomatik başlar ve her açılışta çalışır.
 
 Player URL otomatik: `http://SUNUCU_IP:PORT/player/`
 
+**Pi açılış akışı (mantık):** Pi açıldığında (1) önce verdiğiniz sunucu adresine erişilebilir olana kadar bekler, (2) ardından bu adresteki **Player** sayfasını (Chromium kiosk) açar. Sayfa yüklenince cihaz **kendini sunucuya kaydeder** (Admin’de cihaz listesinde görünür). Sonrasında varsa son oynatılan video otomatik başlar; yoksa “İç bekleniyor” görünür ve Admin’den video gönderip oynatabilirsiniz.
+
 **Kullanım:**
 
 ```bash
@@ -120,6 +126,19 @@ Bu durumda X (grafik ortam) büyük ihtimalle hiç başlamıyor; ekranda gördü
 3. **GPU bellek:** `/boot/config.txt` veya `/boot/firmware/config.txt`’e `gpu_mem=256` ekleyin (video siyah ekran/performans için sık önerilir). Değişiklikten sonra `sudo reboot`.
 4. **Otomatik oynatma (açılışta):** Player, bir kez Admin’den “Oynat” ile oynatılan videoyu hatırlar; Pi yeniden açıldığında aynı video ~1,5 saniye sonra otomatik başlar. İlk seferde Admin’den en az bir kez “Oynat” demeniz gerekir.
 5. **Video formatı:** Pi’de donanım desteği için 720p MP4 (H.264) kullanın; daha ağır formatlar takılabilir veya siyah kalabilir.
+
+---
+
+## Pi Lite kurulumu (GUI yok, MPV)
+
+**Ne zaman:** Raspberry Pi OS **Lite** (Xorg/Chromium yok). MPV ile doğrudan HDMI.
+
+- **Kurulum:** `sudo bash scripts/pi/setup-lite.sh` — Sunucu URL ve Player ID (örn. `lite_1`) sorulur.
+- **Servis:** `ariopi-signage` (açılışta otomatik). Client sunucudan `GET /api/signage/current?player_id=xxx` poll eder; URL gelince MPV ile oynatır.
+- **Oynat:** `curl -X POST http://SUNUCU:3000/api/signage/play -H "Content-Type: application/json" -d '{"player_id":"lite_1","video_id":"VIDEO_ID"}'`
+- **Durdur:** `curl -X POST http://SUNUCU:3000/api/signage/stop -H "Content-Type: application/json" -d '{"player_id":"lite_1"}'`
+- Config: `/etc/ariopi-signage/config.json`. Gerekirse `mpv_vo`: `rpi` veya `drm`.
+- **Eski kurulum:** Script calistirilinca varsa `ariopi-signage` kapatilir; Chromium kiosk icin eklenen startx tetikleyicisi (.profile/.bash_profile) kaldirilir. Sadece Lite (MPV) kullanilir.
 
 ---
 

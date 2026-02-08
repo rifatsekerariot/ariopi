@@ -112,6 +112,38 @@ app.delete('/api/videos/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// API: Lite client (MPV/OMXPlayer) — hangi videoyu oynatacağını poll ile alır
+const PUBLIC_URL_FALLBACK = process.env.PUBLIC_URL ? process.env.PUBLIC_URL.replace(/\/$/, '') : null;
+function getBaseUrlForReq(req) {
+  return PUBLIC_URL_FALLBACK || (req.protocol + '://' + req.get('host'));
+}
+app.get('/api/signage/current', (req, res) => {
+  const playerId = req.query.player_id || req.query.playerId;
+  if (!playerId) return res.status(400).json({ error: 'player_id gerekli' });
+  const cur = playerCurrentMedia.get(playerId);
+  if (!cur || !videoLibrary.has(cur.videoId)) return res.status(204).end();
+  const baseUrl = getBaseUrlForReq(req);
+  res.json({ url: `${baseUrl}/api/videos/${cur.videoId}/file`, videoId: cur.videoId });
+});
+app.post('/api/signage/play', (req, res) => {
+  const { player_id: playerId, playerId: playerIdAlt, video_id: videoId, videoId: videoIdAlt } = req.body || {};
+  const pid = playerId || playerIdAlt;
+  const vid = videoId || videoIdAlt;
+  if (!pid || !vid) return res.status(400).json({ error: 'player_id ve video_id gerekli' });
+  const v = videoLibrary.get(vid);
+  if (!v) return res.status(404).json({ error: 'Video bulunamadı' });
+  const baseUrl = getBaseUrlForReq(req);
+  playerCurrentMedia.set(pid, { url: `${baseUrl}/api/videos/${vid}/file`, videoId: vid });
+  res.json({ ok: true, url: `${baseUrl}/api/videos/${vid}/file` });
+});
+app.post('/api/signage/stop', (req, res) => {
+  const { player_id: playerId, playerId: playerIdAlt } = req.body || {};
+  const pid = playerId || playerIdAlt;
+  if (!pid) return res.status(400).json({ error: 'player_id gerekli' });
+  playerCurrentMedia.delete(pid);
+  res.json({ ok: true });
+});
+
 const io = new Server(server, {
   cors: { origin: true },
   pingTimeout: 20000,
@@ -120,6 +152,8 @@ const io = new Server(server, {
 
 const ADMIN_ROOM = 'admin';
 const players = new Map(); // socketId -> { playerId, socketId, storedVideos: string[], status? }
+// Lite client (MPV/OMXPlayer): playerId -> { url, videoId } — Admin "Oynat" ile güncellenir
+const playerCurrentMedia = new Map();
 
 function getPlayerList() {
   return Array.from(players.values()).map((p) => ({
@@ -208,11 +242,18 @@ io.on('connection', (socket) => {
     target.emit('download_and_store', { videoId, name: v.name, downloadUrl });
   });
 
-  // Admin: cihazda oynat
+  // Admin: cihazda oynat (web player + Lite client için playerCurrentMedia güncellenir)
   socket.on('player_play', (payload) => {
     const { playerSocketId, videoId } = payload || {};
-    if (!playerSocketId) return;
+    if (!playerSocketId || !videoId) return;
+    const v = videoLibrary.get(videoId);
     const target = io.sockets.sockets.get(playerSocketId);
+    const player = target ? players.get(playerSocketId) : null;
+    const playerId = player?.playerId;
+    if (playerId && v) {
+      const baseUrl = getBaseUrl(socket);
+      playerCurrentMedia.set(playerId, { url: `${baseUrl}/api/videos/${videoId}/file`, videoId });
+    }
     if (target) target.emit('play_video', { videoId });
   });
 
@@ -220,6 +261,8 @@ io.on('connection', (socket) => {
   socket.on('player_stop', (payload) => {
     const { playerSocketId } = payload || {};
     if (!playerSocketId) return;
+    const player = players.get(playerSocketId);
+    if (player?.playerId) playerCurrentMedia.delete(player.playerId);
     const target = io.sockets.sockets.get(playerSocketId);
     if (target) target.emit('stop');
   });

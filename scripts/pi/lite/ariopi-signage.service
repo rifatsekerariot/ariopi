@@ -1,0 +1,18 @@
+[Unit]
+Description=ArioPi Digital Signage Lite (MPV)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=video
+# GUI yok; MPV DRM/rpi ile doğrudan HDMI
+Environment=DISPLAY=
+WorkingDirectory=/home/pi
+ExecStart=/usr/bin/python3 /opt/ariopi-signage/signage_client.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

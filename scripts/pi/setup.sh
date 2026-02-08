@@ -20,22 +20,26 @@ echo "=============================================="
 echo "Kiosk kullanıcısı: $KIOSK_USER"
 echo ""
 
-# --- Eski servis temizliği ---
-echo "[0/9] Eski kiosk servisi temizleniyor..."
+# --- Eski kurulum temizliği (eski kiosk + Lite servisi kaldırılır, yeni Chromium kurulur) ---
+echo "[0/9] Eski kurulum temizleniyor..."
 if systemctl is-active --quiet ariopi-kiosk 2>/dev/null; then
   systemctl stop ariopi-kiosk
-  echo "  ariopi-kiosk servisi durduruldu."
+  echo "  ariopi-kiosk durduruldu."
 fi
 if systemctl is-enabled --quiet ariopi-kiosk 2>/dev/null; then
   systemctl disable ariopi-kiosk
-  echo "  ariopi-kiosk açılıştan kaldırıldı."
 fi
 rm -f /etc/systemd/system/ariopi-kiosk.service
-if [ -f /etc/systemd/system/ariopi-kiosk.service ]; then
-  echo "  Uyarı: servis dosyası silinemedi (manuel kontrol edin)."
+if systemctl is-active --quiet ariopi-signage 2>/dev/null; then
+  systemctl stop ariopi-signage
+  echo "  ariopi-signage (Lite) durduruldu."
+fi
+if systemctl is-enabled --quiet ariopi-signage 2>/dev/null; then
+  systemctl disable ariopi-signage
+  echo "  ariopi-signage acilisatan kaldirildi."
 fi
 systemctl daemon-reload 2>/dev/null || true
-echo "  Eski servis temizliği tamamlandı."
+echo "  Eski kurulum temizligi tamamlandi."
 echo ""
 
 # --- İnteraktif bilgiler ---
@@ -95,20 +99,11 @@ xset -dpms
 # İmleci gizle
 unclutter -idle 0.5 -root &
 
-# Ağ ve X hazır olsun diye kısa bekleme (Pi siyah ekran sorununu azaltır)
+# Ağ ve X hazır olsun diye kısa bekleme
 sleep 8
 
-# Chromium kiosk: video otomatik oynatma (Pi'de autoplay politikasını gevşet)
-$CHROMIUM_CMD \\
-  --kiosk \\
-  --noerrdialogs \\
-  --disable-infobars \\
-  --no-first-run \\
-  --autoplay-policy=no-user-gesture-required \\
-  --disable-session-crashed-bubble \\
-  --check-for-update-interval=31536000 \\
-  --disable-backgrounding-occluded-windows \\
-  "$PLAYER_URL"
+# Önce sunucuya erişilebilir olana kadar bekle, sonra Player sayfasını aç (kayıt + oynatma orada olur)
+/home/$KIOSK_USER/ariopi-launch-player.sh
 EOF
 chown -R "$KIOSK_USER":"$KIOSK_USER" /home/"$KIOSK_USER"/.config/openbox
 
@@ -193,12 +188,46 @@ done
 echo ""
 echo "[7/9] Konsol erişimi: Ctrl+Alt+F2 (tty2)."
 
-# --- Player URL'yi kiosk kullanıcı ortamında sakla (isteğe bağlı) ---
+# --- Player launcher: sunucu erişilebilir olana kadar bekler, sonra Chromium açar ---
 echo ""
-echo "[8/9] Kurulum özeti yazılıyor..."
+echo "[8/9] Player launcher ve config yazılıyor..."
 mkdir -p /home/"$KIOSK_USER"/.config/ariopi
-echo "PLAYER_URL=$PLAYER_URL" > /home/"$KIOSK_USER"/.config/ariopi/player-url
+cat > /home/"$KIOSK_USER"/.config/ariopi/player-url << ARIOCONF
+PLAYER_URL=$PLAYER_URL
+CHROMIUM_CMD=$CHROMIUM_CMD
+ARIOCONF
 chown -R "$KIOSK_USER":"$KIOSK_USER" /home/"$KIOSK_USER"/.config/ariopi
+
+LAUNCHER="/home/$KIOSK_USER/ariopi-launch-player.sh"
+cat > "$LAUNCHER" << 'LAUNCHEOF'
+#!/bin/bash
+CONF="$HOME/.config/ariopi/player-url"
+LOG=/tmp/ariopi-startx.log
+[ -f "$CONF" ] && . "$CONF"
+[ -z "$PLAYER_URL" ] && PLAYER_URL="http://localhost:3000/player/"
+[ -z "$CHROMIUM_CMD" ] && command -v chromium-browser &>/dev/null && CHROMIUM_CMD=chromium-browser || CHROMIUM_CMD=chromium
+
+echo "=== ArioPi launcher $(date) ===" >> "$LOG"
+echo "Hedef: $PLAYER_URL (once sunucuya erisim bekleniyor)" >> "$LOG"
+for i in $(seq 1 40); do
+  if curl -s -o /dev/null -f --connect-timeout 4 "$PLAYER_URL" 2>/dev/null; then
+    echo "Sunucu ulasilir, Player aciliyor." >> "$LOG"
+    exec "$CHROMIUM_CMD" --kiosk --noerrdialogs --disable-infobars --no-first-run \
+      --autoplay-policy=no-user-gesture-required --disable-session-crashed-bubble \
+      --check-for-update-interval=31536000 --disable-backgrounding-occluded-windows \
+      "$PLAYER_URL"
+  fi
+  sleep 2
+done
+echo "Uyari: Sunucu timeout, yine de Player aciliyor." >> "$LOG"
+exec "$CHROMIUM_CMD" --kiosk --noerrdialogs --disable-infobars --no-first-run \
+  --autoplay-policy=no-user-gesture-required --disable-session-crashed-bubble \
+  --check-for-update-interval=31536000 --disable-backgrounding-occluded-windows \
+  "$PLAYER_URL"
+LAUNCHEOF
+chmod +x "$LAUNCHER"
+chown "$KIOSK_USER":"$KIOSK_USER" "$LAUNCHER"
+echo "  Launcher: $LAUNCHER (sunucu erisilebilir olunca Chromium acar)"
 
 echo ""
 echo "=============================================="
