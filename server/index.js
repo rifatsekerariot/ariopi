@@ -160,13 +160,19 @@ io.on('connection', (socket) => {
       socket.join('players');
       socket.emit('joined', { playerId, socketId: socket.id });
       notifyAdminsPlayerList();
-      console.log('[Server] Player joined:', playerId);
+      console.log('[Server] Player joined:', playerId, 'socketId:', socket.id);
     } else if (room === 'admin') {
       socket.data.role = 'admin';
       socket.join(ADMIN_ROOM);
       socket.emit('joined', { room: 'admin' });
       socket.emit('player-list', getPlayerList());
-      console.log('[Server] Admin joined');
+      console.log('[Server] Admin joined, socketId:', socket.id, 'players:', players.size);
+    }
+  });
+
+  socket.on('get-player-list', () => {
+    if (socket.data.role === 'admin') {
+      socket.emit('player-list', getPlayerList());
     }
   });
 

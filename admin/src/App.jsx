@@ -21,11 +21,19 @@ export default function App() {
       setConnected(true);
       setError(null);
       s.emit('join-room', { room: 'admin' });
+      setTimeout(() => s.emit('get-player-list'), 500);
     });
     s.on('player-list', (list) => setPlayers(list || []));
     s.on('disconnect', () => setConnected(false));
     s.on('connect_error', (err) => setError(err.message));
-    return () => s.disconnect();
+    const onVisibility = () => { if (document.visibilityState === 'visible' && s.connected) s.emit('get-player-list'); };
+    document.addEventListener('visibilitychange', onVisibility);
+    const interval = setInterval(() => { if (s.connected) s.emit('get-player-list'); }, 10000);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearInterval(interval);
+      s.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -154,10 +162,22 @@ export default function App() {
 
         {/* Cihazlar ve kontrol */}
         <section className="rounded-lg border border-slate-700 bg-slate-800/50 p-4">
-          <h2 className="text-lg font-medium text-slate-200">Cihazlar</h2>
-          <p className="mt-1 text-sm text-slate-500">Cihaz seç, cihazdaki videoyu oynat / durdur / sil.</p>
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h2 className="text-lg font-medium text-slate-200">Cihazlar</h2>
+              <p className="mt-1 text-sm text-slate-500">Cihaz seç, cihazdaki videoyu oynat / durdur / sil.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => socket?.emit('get-player-list')}
+              disabled={!connected}
+              className="shrink-0 rounded bg-slate-600 px-2 py-1.5 text-xs text-slate-200 hover:bg-slate-500 disabled:opacity-50"
+            >
+              Listeyi yenile
+            </button>
+          </div>
           {players.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-500">Bağlı cihaz yok.</p>
+            <p className="mt-3 text-sm text-slate-500">Bağlı cihaz yok. Pi açıksa birkaç saniye bekleyin veya &quot;Listeyi yenile&quot;ye tıklayın.</p>
           ) : (
             <>
               <ul className="mt-3 space-y-2">
