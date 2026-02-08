@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-ArioPi — Digital Signage Lite client (Raspberry Pi OS Lite).
-Sunucudan /api/signage/current ile oynatılacak videoyu alır, MPV ile HDMI'da oynatır.
-X/Wayland gerekmez; MPV --vo=drm veya --vo=rpi ile doğrudan çıktı.
+ArioPi — Digital Signage player (Raspberry Pi).
+Açılışta hemen siyah "bekliyor" ekranı açar (tty görünmez), sunucudan video gelince oynatır.
 """
+import base64
 import json
 import os
 import signal
@@ -15,8 +15,9 @@ import urllib.error
 
 CONFIG_DIR = os.environ.get("ARIOPI_LITE_CONFIG", "/etc/ariopi-signage")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
-POLL_INTERVAL = 15
-REQUEST_TIMEOUT = 10
+WAITING_PNG = "/tmp/ariopi-waiting.png"  # 1x1 siyah PNG, açılışta ekranı kaplar
+POLL_INTERVAL = 10
+REQUEST_TIMEOUT = 8
 
 def load_config():
     path = CONFIG_FILE
@@ -54,6 +55,41 @@ def main():
 
     current_url = None
     mpv_proc = None
+
+    # Açılışta hemen siyah ekran göster (tty görünmesin)
+    def ensure_waiting_image():
+        if not os.path.isfile(WAITING_PNG):
+            # 1x1 siyah PNG (minimal)
+            b = base64.b64decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEBgIApD5fRAAAAABJRU5ErkJggg=="
+            )
+            with open(WAITING_PNG, "wb") as f:
+                f.write(b)
+
+    def play_waiting():
+        """Siyah bekleme ekranı (sunucuya bağlanıyor / iç bekleniyor)."""
+        nonlocal mpv_proc
+        kill_mpv()
+        ensure_waiting_image()
+        cmd = [
+            "mpv",
+            "--fs",
+            "--no-osd",
+            "--no-input-default-bindings",
+            f"--vo={mpv_vo}",
+            "--loop=inf",
+            WAITING_PNG,
+        ]
+        try:
+            mpv_proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except FileNotFoundError:
+            pass
 
     def kill_mpv():
         nonlocal mpv_proc
@@ -96,6 +132,9 @@ def main():
     signal.signal(signal.SIGTERM, on_sigterm)
     signal.signal(signal.SIGINT, on_sigterm)
 
+    # İlk açılışta hemen ekranı al (tty görünmesin)
+    play_waiting()
+
     while True:
         url = get_current_media(server_url, player_id)
         if url != current_url:
@@ -103,10 +142,11 @@ def main():
             if url:
                 play_url(url)
             else:
-                kill_mpv()
+                play_waiting()
         if mpv_proc and mpv_proc.poll() is not None:
             mpv_proc = None
             current_url = None
+            play_waiting()
         time.sleep(POLL_INTERVAL)
 
 if __name__ == "__main__":

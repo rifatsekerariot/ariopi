@@ -77,7 +77,7 @@ npm run dev
 ## Kurulum scriptleri
 
 - **Sunucu:** `sudo bash scripts/server/setup.sh` — Node, build, systemd.  
-- **Pi:** `sudo bash scripts/pi/setup.sh` — Kiosk (Chromium + Openbox), systemd.  
+- **Pi:** `sudo bash scripts/pi/setup.sh` — Oynatıcı (MPV), açılışta ekranda player, sunucuya kayıt.  
 
 Ayrıntılar: [scripts/README.md](scripts/README.md)
 

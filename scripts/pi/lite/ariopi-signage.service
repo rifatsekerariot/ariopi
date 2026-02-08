@@ -1,7 +1,6 @@
 [Unit]
-Description=ArioPi Digital Signage Lite (MPV)
-After=network-online.target
-Wants=network-online.target
+Description=ArioPi Player (MPV)
+After=local-fs.target
 
 [Service]
 Type=simple
