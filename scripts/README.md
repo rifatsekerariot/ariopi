@@ -1,6 +1,6 @@
 # ArioPi — Kurulum Scriptleri
 
-Bu klasör sunucu ve Raspberry Pi için **interaktif kurulum scriptleri** içerir. IP adresi, port gibi bilgiler script çalıştırılırken sorulur.
+Bu klasör sunucu ve Raspberry Pi için **interaktif kurulum scriptleri** içerir. Scriptler önce **eski sürüm ve servisleri temizler**, ardından yeni sürümü kurar. IP adresi, port gibi bilgiler çalıştırma sırasında sorulur.
 
 ## Dizin yapısı
 
@@ -8,9 +8,9 @@ Bu klasör sunucu ve Raspberry Pi için **interaktif kurulum scriptleri** içeri
 scripts/
 ├── README.md           # Bu dosya
 ├── server/
-│   └── setup.sh        # Sunucu kurulumu (Node, build, .env, systemd)
+│   └── setup.sh        # Sunucu: eski servis + build temizliği, sonra kurulum
 └── pi/
-    └── setup.sh        # Pi kiosk kurulumu (Xorg, Openbox, Chromium, systemd)
+    └── setup.sh        # Pi: eski kiosk servisi temizliği, sonra kurulum
 ```
 
 ---
@@ -21,11 +21,12 @@ scripts/
 
 **Ne yapar:**
 
+0. **Temizlik:** Eski `ariopi-server` servisini durdurur, devre dışı bırakır, servis dosyasını kaldırır; `node_modules` ve `server/public` build çıktılarını siler.
 1. Node.js yoksa kurar (NodeSource 20.x).
 2. Server, admin ve player bağımlılıklarını yükler.
 3. Admin ve player’ı production için build eder ve `server/public/` altına kopyalar.
 4. `server/.env` oluşturur (PORT, BIND).
-5. **systemd servisi `ariopi-server`** kurulur ve açılışta başlamak üzere etkinleştirilir (production ready).
+5. **systemd servisi `ariopi-server`** kurulur ve açılışta başlamak üzere etkinleştirilir.
 
 **İnteraktif sorular:**
 
@@ -55,10 +56,11 @@ Kurulumdan sonra servis otomatik başlar ve her açılışta çalışır.
 
 **Ne yapar:**
 
+0. **Temizlik:** Eski `ariopi-kiosk` servisini durdurur, devre dışı bırakır, servis dosyasını kaldırır.
 1. Paket listesini günceller.
 2. Xorg, Openbox, Chromium (veya chromium-browser), unclutter kurar.
 3. Openbox autostart’a kiosk komutunu yazar (Player URL scriptte sorulur).
-4. **systemd servisi `ariopi-kiosk`** kurulur: xinit ile X + Openbox + Chromium kiosk; açılışta otomatik başlar (production ready).
+4. **systemd servisi `ariopi-kiosk`** kurulur: xinit ile X + Openbox + Chromium kiosk; açılışta otomatik başlar.
 5. Tty1 otomatik giriş (konsol erişimi için).
 
 **İnteraktif sorular:**
@@ -92,5 +94,5 @@ Kurulumdan sonra Pi’yi yeniden başlatın; kiosk systemd ile açılışta baş
    - Sunucu IP ve port girin. Servis kurulur. `sudo reboot` yapın.
 
 3. **Kullanım:**  
-   - `http://SUNUCU_IP:3000/admin/` → Player seç → Start Stream.  
-   - Pi’de TV’de kiosk otomatik açık; yayın burada görüntülenir.
+   - `http://SUNUCU_IP:3000/admin/` → Video yükle, cihaz seç, cihaza gönder / oynat / durdur / sil.  
+   - Pi’de TV’de kiosk otomatik açık; yerel videolar burada oynatılır.

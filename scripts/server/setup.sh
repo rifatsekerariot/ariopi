@@ -1,11 +1,10 @@
 #!/bin/bash
 # ArioPi — Sunucu kurulum scripti (Ubuntu/Debian tabanlı)
+# Eski servisi ve build çıktılarını temizler, ardından yeni sürümü kurar.
 # Kullanım: sudo bash scripts/server/setup.sh
-# Proje kök dizininden veya scripts/server içinden çalıştırılabilir.
 
 set -e
 
-# Proje kök dizinini bul
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_ROOT"
@@ -14,6 +13,26 @@ echo "=============================================="
 echo "  ArioPi — Sunucu Kurulumu"
 echo "=============================================="
 echo "Proje dizini: $PROJECT_ROOT"
+echo ""
+
+# --- Eski sürüm ve servis temizliği ---
+echo "[0/8] Eski sürüm ve servisler temizleniyor..."
+if systemctl is-active --quiet ariopi-server 2>/dev/null; then
+  systemctl stop ariopi-server
+  echo "  ariopi-server servisi durduruldu."
+fi
+if systemctl is-enabled --quiet ariopi-server 2>/dev/null; then
+  systemctl disable ariopi-server
+  echo "  ariopi-server açılıştan kaldırıldı."
+fi
+rm -f /etc/systemd/system/ariopi-server.service
+if [ -f /etc/systemd/system/ariopi-server.service ]; then
+  echo "  Uyarı: servis dosyası silinemedi (manuel kontrol edin)."
+fi
+systemctl daemon-reload 2>/dev/null || true
+rm -rf "$PROJECT_ROOT/server/node_modules" "$PROJECT_ROOT/admin/node_modules" "$PROJECT_ROOT/player/node_modules"
+rm -rf "$PROJECT_ROOT/server/public/admin" "$PROJECT_ROOT/server/public/player"
+echo "  Eski node_modules ve public build çıktıları temizlendi."
 echo ""
 
 # --- İnteraktif bilgiler ---
@@ -49,7 +68,7 @@ fi
 
 # --- Node.js kontrolü ---
 echo ""
-echo "[1/7] Node.js kontrol ediliyor..."
+echo "[1/8] Node.js kontrol ediliyor..."
 if ! command -v node &>/dev/null; then
   echo "Node.js bulunamadı. Kuruluyor (NodeSource 20.x)..."
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -60,13 +79,13 @@ echo "  npm:  $(npm -v)"
 
 # --- Sunucu bağımlılıkları ---
 echo ""
-echo "[2/7] Server bağımlılıkları yükleniyor..."
+echo "[2/8] Server bağımlılıkları yükleniyor..."
 cd "$PROJECT_ROOT/server"
 npm install --production=false
 
 # --- Admin build ---
 echo ""
-echo "[3/7] Admin paneli build ediliyor (VITE_SOCKET_URL=$SOCKET_URL, base=/admin/)..."
+echo "[3/8] Admin paneli build ediliyor (VITE_SOCKET_URL=$SOCKET_URL, base=/admin/)..."
 cd "$PROJECT_ROOT/admin"
 npm install
 export VITE_SOCKET_URL="$SOCKET_URL"
@@ -75,7 +94,7 @@ npm run build
 
 # --- Player build ---
 echo ""
-echo "[4/7] Player build ediliyor (VITE_SOCKET_URL=$SOCKET_URL, base=/player/)..."
+echo "[4/8] Player build ediliyor (VITE_SOCKET_URL=$SOCKET_URL, base=/player/)..."
 cd "$PROJECT_ROOT/player"
 npm install
 export VITE_SOCKET_URL="$SOCKET_URL"
@@ -84,7 +103,7 @@ npm run build
 
 # --- Static dosyaları server/public altına kopyala ---
 echo ""
-echo "[5/7] Build çıktıları server/public altına kopyalanıyor..."
+echo "[5/8] Build çıktıları server/public altına kopyalanıyor..."
 mkdir -p "$PROJECT_ROOT/server/public"
 rm -rf "$PROJECT_ROOT/server/public/admin" "$PROJECT_ROOT/server/public/player"
 cp -r "$PROJECT_ROOT/admin/dist" "$PROJECT_ROOT/server/public/admin"
@@ -94,7 +113,7 @@ echo "  /player -> server/public/player"
 
 # --- .env oluştur ---
 echo ""
-echo "[6/7] server/.env oluşturuluyor..."
+echo "[6/8] server/.env oluşturuluyor..."
 cat > "$PROJECT_ROOT/server/.env" << EOF
 # ArioPi Server — Bu dosya setup.sh tarafından oluşturuldu
 PORT=$PORT
@@ -105,7 +124,7 @@ echo "  BIND=$BIND"
 
 # --- systemd servisi (production: her zaman kurulu) ---
 echo ""
-echo "[7/7] systemd servisi kuruluyor (ariopi-server)..."
+echo "[7/8] systemd servisi kuruluyor (ariopi-server)..."
 SERVICE_FILE="/etc/systemd/system/ariopi-server.service"
 NODE_PATH=$(which node)
 cat > "$SERVICE_FILE" << EOF

@@ -1,11 +1,10 @@
 #!/bin/bash
 # ArioPi — Raspberry Pi (kiosk) kurulum scripti
-# Raspberry Pi OS Lite üzerinde çalıştırın: sudo bash scripts/pi/setup.sh
-# Proje kök dizininden veya scripts/pi içinden çalıştırılabilir.
+# Eski kiosk servisini temizler, ardından yeni sürümü kurar.
+# Kullanım: sudo bash scripts/pi/setup.sh
 
 set -e
 
-# Proje kök dizinini bul (script ariopi içinde değilse çalışma dizinini kullan)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -d "$SCRIPT_DIR/../.." ] && [ -f "$SCRIPT_DIR/../../server/index.js" ]; then
   PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -19,6 +18,24 @@ echo "=============================================="
 echo "  ArioPi — Raspberry Pi Kiosk Kurulumu"
 echo "=============================================="
 echo "Kiosk kullanıcısı: $KIOSK_USER"
+echo ""
+
+# --- Eski servis temizliği ---
+echo "[0/8] Eski kiosk servisi temizleniyor..."
+if systemctl is-active --quiet ariopi-kiosk 2>/dev/null; then
+  systemctl stop ariopi-kiosk
+  echo "  ariopi-kiosk servisi durduruldu."
+fi
+if systemctl is-enabled --quiet ariopi-kiosk 2>/dev/null; then
+  systemctl disable ariopi-kiosk
+  echo "  ariopi-kiosk açılıştan kaldırıldı."
+fi
+rm -f /etc/systemd/system/ariopi-kiosk.service
+if [ -f /etc/systemd/system/ariopi-kiosk.service ]; then
+  echo "  Uyarı: servis dosyası silinemedi (manuel kontrol edin)."
+fi
+systemctl daemon-reload 2>/dev/null || true
+echo "  Eski servis temizliği tamamlandı."
 echo ""
 
 # --- İnteraktif bilgiler ---
@@ -42,12 +59,12 @@ fi
 
 # --- Sistem güncellemesi ---
 echo ""
-echo "[1/7] Paket listesi güncelleniyor..."
+echo "[1/8] Paket listesi güncelleniyor..."
 apt-get update -qq
 
 # --- GUI ve Chromium ---
 echo ""
-echo "[2/7] Xorg, Openbox ve Chromium kuruluyor..."
+echo "[2/8] Xorg, Openbox ve Chromium kuruluyor..."
 apt-get install -y --no-install-recommends \
   xorg \
   openbox \
@@ -67,7 +84,7 @@ echo "  Chromium komutu: $CHROMIUM_CMD"
 
 # --- Openbox autostart ---
 echo ""
-echo "[3/7] Openbox autostart (kiosk) yazılıyor..."
+echo "[3/8] Openbox autostart (kiosk) yazılıyor..."
 mkdir -p /home/"$KIOSK_USER"/.config/openbox
 cat > /home/"$KIOSK_USER"/.config/openbox/autostart << EOF
 # İmleci gizle (0.5 saniye hareketsizlikten sonra)
@@ -87,13 +104,13 @@ chown -R "$KIOSK_USER":"$KIOSK_USER" /home/"$KIOSK_USER"/.config/openbox
 
 # --- .xinitrc (openbox) ---
 echo ""
-echo "[4/7] .xinitrc (openbox-session)..."
+echo "[4/8] .xinitrc (openbox-session)..."
 echo 'exec openbox-session' > /home/"$KIOSK_USER"/.xinitrc
 chown "$KIOSK_USER":"$KIOSK_USER" /home/"$KIOSK_USER"/.xinitrc
 
 # --- systemd kiosk servisi (production: açılışta kiosk) ---
 echo ""
-echo "[5/7] systemd kiosk servisi kuruluyor (ariopi-kiosk)..."
+echo "[5/8] systemd kiosk servisi kuruluyor (ariopi-kiosk)..."
 # Xorg yolu (Debian/Raspberry Pi OS)
 XORG_BIN=""
 for x in /usr/lib/xorg/Xorg /usr/lib/xserver-Xorg/Xorg /usr/bin/Xorg X; do
@@ -128,7 +145,7 @@ echo "  Servis kuruldu ve açılışta başlamak üzere etkinleştirildi."
 
 # --- Tty1 otomatik giriş (isteğe bağlı konsol erişimi) ---
 echo ""
-echo "[6/7] Tty1 otomatik giriş (konsol erişimi için)..."
+echo "[6/8] Tty1 otomatik giriş (konsol erişimi için)..."
 mkdir -p /etc/systemd/system/getty@tty1.service.d
 cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << EOF
 [Service]
@@ -138,7 +155,7 @@ EOF
 
 # --- Player URL'yi kiosk kullanıcı ortamında sakla (isteğe bağlı) ---
 echo ""
-echo "[7/7] Kurulum özeti yazılıyor..."
+echo "[7/8] Kurulum özeti yazılıyor..."
 mkdir -p /home/"$KIOSK_USER"/.config/ariopi
 echo "PLAYER_URL=$PLAYER_URL" > /home/"$KIOSK_USER"/.config/ariopi/player-url
 chown -R "$KIOSK_USER":"$KIOSK_USER" /home/"$KIOSK_USER"/.config/ariopi
